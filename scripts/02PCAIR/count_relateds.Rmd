@@ -1,0 +1,132 @@
+---
+title: "pull relatedness info"
+author: "Ryan Schubert"
+date: "December 23, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(tibble)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+## pull plink info
+
+
+```{r}
+pop_list<-c("AFA","CHN","CAU","HIS","ALL")
+plink_list<-list()
+for ( i in 1:length(pop_list)){
+  if (pop_list[i] == "CAU"){
+    plink_list[[i]]<-fread("Z:/topmed/proteome/" %&% pop_list[i] %&% "/genotypes/QC_lauren/relatedness_steps/02relatedness.genome") %>% 
+      mutate(IID1=as.character(IID1),IID2=as.character(IID2))
+  } else {
+    plink_list[[i]]<-fread("Z:/topmed/proteome/" %&% pop_list[i] %&% "/genotypes/QC/relatedness_steps/02relatedness.genome") %>% mutate(IID1=as.character(IID1),IID2=as.character(IID2))
+  }
+
+}
+
+
+
+```
+
+## pull estimated king matrix info
+
+
+```{r}
+pop_list<-c("AFA","CHN","CAU","HIS","ALL")
+king_list<-list()
+for ( i in 1:length(pop_list)){
+    king_list[[i]]<-readRDS("Z:/topmed/proteome/" %&% pop_list[i] %&% "/PCAIR_modeling/02PCAIR/King_matrix.RDS")
+}
+king_list[[5]]<-readRDS("Z:/topmed/proteome/ALL/PCAIR_ALL/01PCair_steps/King_matrix.RDS")
+
+kinship_list_long<-list()
+for ( i in 1:length(pop_list)){
+  colnames(king_list[[i]]$kinship)<-king_list[[i]]$sample.id
+  row.names(king_list[[i]]$kinship)<-king_list[[i]]$sample.id
+  kinship_list_long[[i]]<-king_list[[i]]$kinship %>% 
+    as.data.frame() %>% 
+    rownames_to_column(var="IID1") %>% 
+    pivot_longer(!IID1,names_to="IID2",values_to="kinship")
+}
+
+IBS0_list_long<-list()
+for ( i in 1:length(pop_list)){
+  colnames(king_list[[i]]$IBS0)<-king_list[[i]]$sample.id
+  row.names(king_list[[i]]$IBS0)<-king_list[[i]]$sample.id
+  IBS0_list_long[[i]]<-king_list[[i]]$IBS0 %>% 
+    as.data.frame() %>% 
+    rownames_to_column(var="IID1") %>% 
+    pivot_longer(!IID1,names_to="IID2",values_to="IBS0")
+}
+```
+
+## Make some plots comparing how the plink IBD looks compared to King kinship and IBS0
+
+```{r}
+# pop_list
+for (i in 1:length(pop_list)){
+  print(pop_list[i])
+  IBS0_join<-inner_join(plink_list[[i]],IBS0_list_long[[i]],by=c("IID1"="IID1","IID2"="IID2"))
+  gIBS0<-ggplot(data=IBS0_join,aes(x=PI_HAT,y=IBS0)) + geom_point() + theme_bw() + labs(title="King IBS0 vs plink PI_HAT within " %&% pop_list[i] )
+  print(gIBS0)
+  kinship_join<-inner_join(plink_list[[i]],kinship_list_long[[i]])
+  gkinship<-ggplot(data=kinship_join,aes(x=PI_HAT,y=kinship)) + geom_point() + theme_bw() + labs(title="King kinship vs plink PI_HAT within " %&% pop_list[i] )
+  print(gkinship)
+}
+
+```
+
+## Make table per population
+since the plink appears to be more conservative we will itertively filter by PI_hat thresholds
+
+```{r}
+#first, second, third, and approximately unrelated individuals
+pihat_list<-c(0.5,0.25,0.125,0.05,0)
+for (i in 1:length(pop_list)){
+  print(pop_list[i])
+  table_join<-inner_join(plink_list[[i]],IBS0_list_long[[i]],by=c("IID1"="IID1","IID2"="IID2")) %>% 
+    inner_join(kinship_list_long[[i]],by=c("IID1"="IID1","IID2"="IID2")) %>%
+    mutate(pop=pop_list[i]) %>%
+    select(IID1,IID2,Z0,Z1,Z2,PI_HAT,IBS0,kinship,pop)
+  for (j in pihat_list){
+    cat("at pi hat minimum threshold",j,"\n")
+    rel_set<-table_join %>% filter(PI_HAT > j) 
+    cat(nrow(rel_set), "related pairs\n")
+    if (nrow(rel_set) == 0){
+      next
+    }
+    # fwrite(rel_set,"Z:/topmed/proteome/" %&% pop_list[i] %&% "/PCAIR_modeling/02PCAIR/kinship_at_PI_HAT_" %&% j %&% ".txt",sep="\t")
+  }
+}
+
+kinship_list<-c(2^(-5/2),2^(-7/2),2^(-9/2),2^(-11/2))
+for (i in 1:length(pop_list)){
+  print(pop_list[i])
+  table_join<-inner_join(plink_list[[i]],IBS0_list_long[[i]],by=c("IID1"="IID1","IID2"="IID2")) %>% 
+    inner_join(kinship_list_long[[i]],by=c("IID1"="IID1","IID2"="IID2")) %>%
+    mutate(pop=pop_list[i]) %>%
+    select(IID1,IID2,Z0,Z1,Z2,PI_HAT,IBS0,kinship,pop)
+  for (j in kinship_list){
+    cat("at kinship minimum threshold",j,"\n")
+    rel_set<-table_join %>% filter(kinship > j) 
+    cat(nrow(rel_set), "related pairs\n")
+    if (nrow(rel_set) == 0){
+      next
+    }
+    # fwrite(rel_set,"Z:/topmed/proteome/" %&% pop_list[i] %&% "/PCAIR_modeling/02PCAIR/kinship_at_kinship_" %&% j %&% ".txt",sep="\t")
+  }
+}
+
+```
+
+
+## pull estimated pc-relate info
+
+
+

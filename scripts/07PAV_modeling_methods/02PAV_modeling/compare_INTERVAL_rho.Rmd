@@ -1,0 +1,89 @@
+---
+title: "compare INTERVAL rho pav adj"
+author: "Ryan Schubert"
+date: "April 30, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(RSQLite)
+library(data.table)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(naniar)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+## read in baseline data
+
+```{r}
+dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/"
+files<-list.files(dir,pattern="*baseline_models_rho0.1_zpval0.05_correlation.txt")
+file_list<-vector(mode="list",length(files))
+for (f in 1:length(files)){
+  file_list[[f]]<-fread(dir %&% files[f]) %>% mutate(source=files[f])
+}
+base_correlations<-bind_rows(file_list) %>% 
+  mutate(train_pop=substr(source,1,3)) %>%
+  rename(base_estimate="estimate",base_pval="p.value")
+```
+
+
+## read in PAV adj predictions
+
+```{r}
+dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/PAV_adj_correlations/"
+files<-list.files(dir,pattern="*correlation.txt")
+file_list<-vector(mode="list",length(files))
+for (f in 1:length(files)){
+  file_list[[f]]<-fread(dir %&% files[f]) %>% mutate(source=files[f])
+}
+PAV_correlations<-bind_rows(file_list) %>% 
+  mutate(train_pop=substr(source,1,3)) %>%
+  rename(PAV_adj_estimate="estimate",PAV_adj_pval="p.value")
+
+```
+
+## compare the two
+
+```{r}
+adj_list<-fread("Z:/scratch/TOPMed_Proteome/06Elastic_net/PAV_modeling/adj_protein_list.csv") %>% 
+  mutate(adjusted=if_else(PAV_adj_n_PAVs_found!=0,"adjusted","unadjusted"), PAV_adj_gene=gsub("\\.[0-9]+","",PAV_adj_gene)) %>%
+  rename_with(.fn=function(x){gsub("PAV_adj_","",x)})
+
+compare_methods<-full_join(base_correlations,PAV_correlations,by=c("gene_id","train_pop")) %>% inner_join(adj_list,by=c("gene_id"="gene","train_pop"))
+
+compare_methods %>%
+  ggplot(data=.,aes(y=PAV_adj_estimate,x=base_estimate)) +
+  geom_point(aes(colour=adjusted)) +
+  theme_bw() +
+  xlab("Baseline INTERVAL rho") +
+  ylab("PAV adjusted INTERVAL tho") +
+  facet_wrap(~train_pop) +
+  scale_colour_viridis(discrete=T) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_rho_PAV_adj_scatter.png",dpi=500,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_rho_PAV_adj_scatter.pdf",dpi=500,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_rho_PAV_adj_scatter.tiff",dpi=500,height=7,width=7) 
+
+  
+binning<-compare_methods %>% 
+  mutate(dropout=base_estimate-PAV_adj_estimate,
+         dropout_bin=if_else(adjusted=="unadjusted","unadjusted",
+                             if_else(is.na(PAV_adj_estimate),"not significant",
+                                     if_else(dropout < 0.1, "marginal reduction","large reduction")))) %>%
+  filter(!is.na(base_estimate))
+nrow(binning)
+table(binning$dropout_bin)
+table(binning$dropout_bin)/nrow(binning)*100
+```
+```{r}
+tmp<-arrange(compare_methods,adjusted,base_estimate) 
+
+dropout<-tmp %>% filter(adjusted == "unadjusted",train_pop=="CHN") %>%
+  mutate(diff=base_estimate - PAV_adj_estimate)# %>%
+  filter(diff > 0.2)
+  
+  
+```

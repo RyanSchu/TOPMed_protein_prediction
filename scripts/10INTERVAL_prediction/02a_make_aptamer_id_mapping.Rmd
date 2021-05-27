@@ -1,0 +1,34 @@
+---
+title: "make aptamer list"
+author: "Ryan Schubert"
+date: "September 16, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+```
+
+## read in the lists
+
+```{r}
+interval_ids<-fread("Z:/data/topmed_proteome_ashg_prep/protein_expr/aptamer_list.txt")
+joint_ids<-fread("Z:/data/topmed_proteome_ashg_prep/protein_anno_EGAF00001998175/ensg_soma_list.txt")
+soma_to_uniprot_map<-fread("Z:/data/topmed_proteome_ashg_prep/protein_anno_EGAF00001998175/somascan1.3k_aptamer_info.txt")
+somamer_to_uniprot_map<-fread("Z:/data/topmed_proteome_ashg_prep/protein_anno_EGAF00001998175/SOMALOGIC_PROTEINS_info.tsv")
+```
+
+
+### Make somamer to soma map
+
+```{r}
+somamer_to_soma<-inner_join(soma_to_uniprot_map,somamer_to_uniprot_map,by=c("UniProt"))
+
+db_id_to_soma<-joint_ids %>% separate(col="joint_id",into = c("aptamer","ENSG"),remove = F)
+
+db_to_somamaer_map<-inner_join(db_id_to_soma,somamer_to_soma,by=c("aptamer"="SomaId"))
+
+fwrite(db_to_somamaer_map,"Z:/data/topmed_proteome_ashg_prep/protein_anno_EGAF00001998175/joint_id_to_somamer_map.tsv",sep='\t')
+```

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+#$ -S /bin/bash
+#$ -pe mpi 1
+
+Rscript /scratch/rschubert1/TOPMed_Proteome/06Elastic_net/01b_TOPMED_base_training_call_main.R ${pop} ${chrom}
+

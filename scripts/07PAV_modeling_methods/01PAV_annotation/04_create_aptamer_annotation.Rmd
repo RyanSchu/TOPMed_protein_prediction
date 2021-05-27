@@ -1,0 +1,45 @@
+---
+title: "create aptamer annotation"
+author: "Ryan Schubert"
+date: "April 27, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(tibble)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+## map aptamers to transcript ids
+
+```{r cars}
+dir<-"Z:/TOPMed_Proteome/06Elastic_net/PAV_modeling_methods/01PAV_annotation/"
+Soma_map<-fread(dir %&% "somascan1.3k_aptamer_info.txt")
+ENSG_map<-fread(dir %&% "Uniprot_to_ENSG.txt")
+ENST_map<-fread(dir %&% "Uniprot_ENST_mapping.txt")
+
+mapping<-Soma_map %>% inner_join(ENSG_map,by=c("UniProt"="From")) %>% rename(gene="To") %>% inner_join(ENST_map,by=c("UniProt"="From")) %>% rename(transcript="To")
+
+```
+
+
+```{r}
+unique(Soma_map$SomaId) %>% length()
+unique(mapping$SomaId) %>% length()
+
+loss<-Soma_map[!(Soma_map$SomaId %in% mapping$SomaId),]
+
+signif<-fread(dir %&% 'supplemental table 7 - PAGE_coloc_and_Spred_statistics_summary.csv')
+signif<-signif %>% filter(PAV_filtered==F) %>% separate(gene,into=c("SomaId","gene"))
+
+sum(loss$SomaId %in% signif$SomaId)
+
+mapping %>% mutate(modelId=paste(SomaId,gene,sep="_")) %>%
+  fwrite(.,"Z:/TOPMed_Proteome/06Elastic_net/PAV_modeling_methods/01PAV_annotation/Soma_to_Transcript_mapping.tsv",sep='\t')
+```
+
+

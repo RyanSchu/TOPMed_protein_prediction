@@ -1,0 +1,83 @@
+---
+title: "intersect with mashr all tissues"
+author: "Ryan Schubert"
+date: "February 23, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(RSQLite)
+library(tidyr)
+library(dplyr)
+library(stringr)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+## R Markdown
+
+```{r cars}
+mash_dbs<-list.files("Z:/scratch/TOPMed_Proteome/06Elastic_net/mashr/eqtl/mashr/",pattern="*db")
+
+i<-1
+mashcon<-dbConnect(RSQLite::SQLite(),"Z:/scratch/TOPMed_Proteome/06Elastic_net/mashr/eqtl/mashr/" %&% mash_dbs[i])
+mashr_models<-dbReadTable(mashcon,"extra")
+dbDisconnect(mashcon)
+mashr_genes<-gsub("\\.[0-9]+","",mashr_models$gene)
+for (i in 2:length(mash_dbs)){
+  
+  mashcon<-dbConnect(RSQLite::SQLite(),"Z:/scratch/TOPMed_Proteome/06Elastic_net/mashr/eqtl/mashr/" %&% mash_dbs[i])
+  mashr_models<-dbReadTable(mashcon,"extra")
+  dbDisconnect(mashcon)
+  tmp_genes<-gsub("\\.[0-9]+","",mashr_models$gene)
+  mashr_genes<-unique(c(tmp_genes,mashr_genes))
+  
+}
+pop_list<-c("CAU","CHN","AFA","HIS","ALL")
+model_counts_list<-list(rep(NA,5))
+for (pop in 1:length(pop_list)){
+  files<-list.files("Z:/data/TOPMED_Proteome/" %&% pop_list[pop] %&% "/PCAIR_modeling/06Elastic_net/dbs_out/",pattern="rho0.1_zpval0.05.db")
+  count_matrix<-as.data.frame(matrix(NA,nrow=length(files),ncol=2))
+  for (i in 1:length(files)){
+    con <- dbConnect(RSQLite::SQLite(), "Z:/data/TOPMED_Proteome/" %&% pop_list[pop] %&% "/PCAIR_modeling/06Elastic_net/dbs_out/" %&% files[i])
+    extra<-dbReadTable(con,"extra") %>% separate(gene,into=c("aptamer","gene"),sep="_")
+    TOPMed_genes<-gsub("\\.[0-9]+","",extra$gene)
+    count_matrix[i,1]<-files[i]
+    count_matrix[i,2]<-sum(!(TOPMed_genes %in% mashr_genes))
+    tmp<-data.frame(model=files[i],gene=TOPMed_genes, aptamer=extra$aptamer,found_in_mashr=TOPMed_genes %in% mashr_genes)
+    fwrite(tmp,"Z:/scratch/TOPMed_Proteome/06Elastic_net/mashr/TOPMed_mashr_all_tiss_intersect_list.txt",append=T,sep='\t')
+  }
+  model_counts_list[[pop]]<-count_matrix
+}
+```
+```{r pressure, echo=FALSE}
+
+model_counts<-bind_rows(model_counts_list) %>%
+  mutate(pop=substr(V1,1,3)) %>%
+  mutate(axis_labels=if_else(grepl("base",V1),"baseline",str_extract(V1,"0\\.?[01]+_[TF]"))) %>%
+  mutate(axis_labels=if_else(is.na(axis_labels),str_extract(V1,"0_[TF]"),axis_labels)) %>% 
+  filter(!grepl("PAV",V1)) %>%
+  select(-V1)
+
+wide<-pivot_wider(model_counts,id_cols=pop,names_from=axis_labels,values_from=V2)
+fwrite(wide,"Z:/scratch/TOPMed_Proteome/06Elastic_net/mashr/signif_model_counts_not_in_mashr_all_tiss.txt",col.names=T,row.names=F,sep='\t',quote = F)
+
+model_counts_PAV_filt<-bind_rows(model_counts_list) %>%
+  mutate(pop=substr(V1,1,3)) %>%
+  mutate(axis_labels=if_else(grepl("base",V1),"baseline",str_extract(V1,"0\\.?[01]+_[TF]"))) %>%
+  mutate(axis_labels=if_else(is.na(axis_labels),str_extract(V1,"0_[TF]"),axis_labels)) %>% 
+  filter(grepl("PAV",V1)) %>%
+  select(-V1)
+
+wide_PAV_filt<-pivot_wider(model_counts_PAV_filt,id_cols=pop,names_from=axis_labels,values_from=V2)
+fwrite(wide_PAV_filt,"Z:/scratch/TOPMed_Proteome/06Elastic_net/mashr/signif_model_counts_not_in_mashr_all_tiss_PAV_filtered.txt",col.names=T,row.names=F,sep='\t',quote = F)
+```
+
+```{r}
+intersect_with_mashr<-fread("Z:/scratch/TOPMed_Proteome/06Elastic_net/mashr/TOPMed_mashr_all_tiss_intersect_list.txt")
+
+unique_proteins<-intersect_with_mashr %>% filter(found_in_mashr == "FALSE") %>% select(aptamer) %>% unlist %>% unname %>% unique 
+unique_proteins
+
+unique_genes<-intersect_with_mashr %>% filter(found_in_mashr == "FALSE") %>% select(gene) %>% unlist %>% unname %>% unique 
+unique_genes
+```

@@ -1,0 +1,88 @@
+---
+title: "process spred results"
+author: "Ryan Schubert"
+date: "May 4, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+read in and process initial data
+
+```{r}
+spred_dir<-"Z:/data/ukbb_sum_stats/spred_out/"
+
+filemap<-fread("Z:/data/ukbb_sum_stats/pheno_summary/phenotype_to_filename_map.csv",header=F)
+filemap<-filemap %>% 
+  mutate(V1=gsub("\\s*\\([^\\)]+\\)","",V1),
+         V1=gsub("\\s","_",V1),
+         V2=gsub("\\.gz","",V2),
+         V2=gsub("\\.bgz","",V2),
+         V2=gsub("\\.tsv","",V2),
+         V2=gsub("\\.csv","",V2),
+         V2=gsub("\\.txt","",V2),
+         V2=gsub("\\.hg38","",V2),
+         V2=gsub("\\.hs38","",V2),
+         V2=gsub("\\.dbgap","",V2))
+colnames(filemap)<-c("phenotype","gwas_file")
+
+files<-list.files(spred_dir,pattern="*PCAIR_baseline_PAV_adj_models.csv")
+model_spred_list<-vector(mode="list",length=length(files))
+for (f in 1:length(files)){
+  model_spred_list[[f]]<-fread(spred_dir %&% files[f],header=T,stringsAsFactors = F) %>% mutate(source=files[f])
+}
+model_hits<-bind_rows(model_spred_list) %>%
+  mutate(model=str_extract(source,"[A-Z]+_PCAIR_baseline_PAV_adj_models"),
+         gwas_file=str_remove(source,"_Spred_[A-Z]+_PCAIR_baseline_PAV_adj_models\\.csv"),
+         gwas_file=gsub("\\.hg38","",gwas_file),
+         gwas_file=gsub("\\.hs38","",gwas_file),
+         gwas_file=gsub("\\.dbgap","",gwas_file)) %>%
+  inner_join(filemap,by=c("gwas_file"))
+bonferroni_strict<-0.05/nrow(model_hits)
+strict_hits<-model_hits %>% filter(pvalue < bonferroni_strict) %>% mutate(bonf=bonferroni_strict)
+  fwrite(strict_hits,"Z:/data/ukbb_sum_stats/spred_strict_bonf_significant/ukbb_PCAIR_baseline_PAV_adjusted_bonf_significant_S-Pred_hits.csv")
+  fwrite(model_hits,"Z:/data/ukbb_sum_stats/spred_strict_bonf_significant/ukbb_PCAIR_baseline_PAV_adjusted_all_results_S-Pred_hits.csv")
+```
+
+#do this again for PAGE
+
+```{r}
+
+spred_dir<-"Z:/scratch/TOPMed_Proteome/08PWAS/PAGE_SPred_out/"
+
+filemap<-fread("Z:/data/ukbb_sum_stats/pheno_summary/phenotype_to_filename_map.csv",header=F)
+filemap<-filemap %>% 
+  mutate(V1=gsub("\\s*\\([^\\)]+\\)","",V1),
+         V1=gsub("\\s","_",V1),
+         V2=gsub("\\.gz","",V2),
+         V2=gsub("\\.bgz","",V2),
+         V2=gsub("\\.tsv","",V2),
+         V2=gsub("\\.csv","",V2),
+         V2=gsub("\\.txt","",V2),
+         V2=gsub("\\.hg38","",V2),
+         V2=gsub("\\.hs38","",V2),
+         V2=gsub("\\.dbgap","",V2))
+colnames(filemap)<-c("phenotype","gwas_file")
+
+files<-list.files(spred_dir,pattern="*.csv")
+model_spred_list<-vector(mode="list",length=length(files))
+for (f in 1:length(files)){
+  model_spred_list[[f]]<-fread(spred_dir %&% files[f],header=T,stringsAsFactors = F) %>% mutate(source=files[f])
+}
+model_hits<-bind_rows(model_spred_list) %>%
+  mutate(model=str_extract(source,"[A-Z]+_PAV_adj"),
+         phenotype=gsub("_[A-Z]+_PAV_adj\\.csv","",source),
+         train_pop=substr(model,1,3)) 
+bonferroni_strict<-0.05/nrow(model_hits)
+strict_hits<-model_hits %>% filter(pvalue < bonferroni_strict) %>% mutate(bonf=bonferroni_strict)
+fwrite(strict_hits,"Z:/scratch/TOPMed_Proteome/08PWAS/PAGE_bonf_signif/PAGE_PCAIR_baseline_PAV_adjusted_bonf_significant_S-Pred_hits.csv")
+fwrite(model_hits,"Z:/scratch/TOPMed_Proteome/08PWAS/PAGE_bonf_signif/PAGE_PCAIR_baseline_PAV_adjusted_all_results_S-Pred_hits.csv")
+
+
+```
