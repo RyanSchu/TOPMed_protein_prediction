@@ -1,14 +1,21 @@
-# TOPMed_protein_prediction
+# TOPMed protein prediction
 
 associated analysis for our manuscript "Protein prediction for trait mapping in diverse populations"
 
-# Data
+# Genotype level data
 
 TOPMed MESA
 
 1000 Genomes
 
 INTERVAL
+
+# Summary statistics data
+
+PAGE
+
+UKBB
+
 
 # Software
 
