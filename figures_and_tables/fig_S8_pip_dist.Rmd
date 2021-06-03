@@ -1,0 +1,108 @@
+---
+title: "plot pip dist"
+author: "Ryan Schubert"
+date: "May 11, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(viridis)
+library(cowplot)
+library(DescTools)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+# read in data
+
+```{r}
+
+pop_vec<-c("AFA","CHN","CAU","ALL","HIS")
+pip_list<-vector(mode="list",length(pop_vec))
+for (pop in pop_vec){
+  pip_list[[pop]]<-fread("Z:/data/TOPMED_Proteome/" %&% pop %&% "/PCAIR_modeling/05dapg/summary_dapg_out/summary_snps.txt") %>% mutate(pop=pop)
+}
+rm(pop)
+pip_df<-bind_rows(pip_list) %>% 
+  mutate(pop=if_else(pop=="CAU","EUR",pop))
+
+PIP0<-ggplot(data=pip_df) +
+  xlab("PIP") +
+  geom_density(aes(x=V3,colour=pop,fill=pop),alpha=0.5) +
+  theme_bw() + scale_fill_viridis(discrete = T) + scale_colour_viridis(discrete = T) +
+  facet_wrap(~"PIP > 0") + labs(fill="TOPMed Population",colour="TOPMed Population") +
+  theme( axis.title.x = element_blank())
+PIP0.001<-pip_df %>% filter(V3 > 0.001) %>%
+  ggplot(data=.) +
+  xlab("PIP") +
+  geom_density(aes(x=V3,colour=pop,fill=pop),alpha=0.5) +
+  theme_bw() + scale_fill_viridis(discrete = T) + scale_colour_viridis(discrete = T) +
+  facet_wrap(~"PIP > 0.001") +
+  theme( axis.title.x = element_blank())
+PIP0.01<-pip_df %>% filter(V3 > 0.01) %>%
+  ggplot(data=.) +
+  xlab("PIP") +
+  geom_density(aes(x=V3,colour=pop,fill=pop),alpha=0.5) +
+  theme_bw() + scale_fill_viridis(discrete = T) + scale_colour_viridis(discrete = T) +
+  facet_wrap(~"PIP > 0.01") +
+  theme( axis.title.x = element_blank())
+
+legend <- get_legend(
+  PIP0 + 
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom")
+)
+
+grid<-plot_grid(PIP0 + theme(legend.position="none"),
+                PIP0.001 + theme(legend.position="none"),
+                PIP0.01 + theme(legend.position="none"),
+                labels = c("A","B","C"),
+                align="v",
+                ncol=1) 
+plot_grid(grid,legend,ncol = 1, rel_heights = c(1, .1)) + 
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP_distribution.pdf",dpi=700,height=7,width=7)  +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP_distribution.png",dpi=700,height=7,width=7)  +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP_distribution.tiff",height=7,width=7)
+
+
+PIP0<-ggplot(data=pip_df) +
+  xlab("PIP") +
+  geom_density(aes(x=V3),alpha=0.5) +
+  theme_bw() +
+  facet_wrap(~pop,ncol = 1) + labs(fill="TOPMed Population",colour="TOPMed Population") +
+  theme( axis.title.x = element_blank(),legend.position = "bottom")
+
+PIP0 + 
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0_distribution.pdf",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0_distribution.png",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0_distribution.tiff",dpi=700,width=7.29,height=4.5)   
+
+
+PIP0.001<-pip_df %>% filter( V3 > 0.001) %>%
+  ggplot(data=.) +
+  xlab("PIP") +
+  geom_density(aes(x=V3),alpha=0.5) +
+  theme_bw() +
+  facet_wrap(~pop,ncol = 1) + labs(fill="TOPMed Population",colour="TOPMed Population") +
+  theme( axis.title.x = element_blank(),legend.position = "bottom")
+
+PIP0.001 + 
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0.001_distribution.pdf",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0.001_distribution.png",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0.001_distribution.tiff",dpi=700,width=7.29,height=4.5) 
+
+PIP0.01<-pip_df %>% filter( V3 > 0.01) %>%
+  ggplot(data=.) +
+  xlab("PIP") +
+  geom_density(aes(x=V3),alpha=0.5) +
+  theme_bw() +
+  facet_wrap(~pop,ncol = 1) + labs(fill="TOPMed Population",colour="TOPMed Population") +
+  theme( axis.title.x = element_blank(),legend.position = "bottom")
+
+PIP0.01 + 
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0.01_distribution.pdf",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0.01_distribution.png",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PIP0.01_distribution.tiff",dpi=700,width=7.29,height=4.5)  
+
+tapply(pip_df$V3,pip_df$pop,Gini)
+```
+
+
+

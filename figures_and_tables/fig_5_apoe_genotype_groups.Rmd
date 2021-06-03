@@ -1,0 +1,153 @@
+---
+title: "correlate APOE aptamers"
+author: "Ryan Schubert"
+date: "May 12, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(ggplot2)
+library(viridis)
+library(corrplot)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+
+```{r}
+
+#process topmed dosage data
+p<-"ALL"
+snps<-fread("Z:/scratch/TOPMed_Proteome/investigate_APOE/genotype/" %&% p %&% "_chr19.maf.0.01.R2.0.8.dosage.hg38.snps_only.txt")
+s<-snps %>% select(-chr,-snp_ID,-pos,-ref,-alt,-AA_freq) %>% t() %>% as.data.frame() %>% rownames_to_column() %>%
+  rename(rs429358="V1", rs7412="V2") %>%
+  mutate(rowname=as.numeric(rowname),rs429358=round(rs429358,0),rs7412=round(rs7412,0),
+         rs429358=if_else(rs429358==0,"T/T",
+                          if_else(rs429358==1,"C/T","C/C")),
+         rs7412=if_else(rs7412==0,"C/C",
+                        if_else(rs7412==1,"C/T","T/T"))) %>%
+  mutate(APOE_geno=case_when(
+    	rs429358 == "C/C" & rs7412 == "T/T" ~ "E1/E1",
+    	rs429358 == "C/T" & rs7412 == "T/T" ~ "E1/E2",
+    	rs429358 == "C/T" & rs7412 == "C/T" ~ "ambiguous/E2/E4",
+    	rs429358 == "C/C" & rs7412 == "C/T" ~ "E1/E4",
+    	rs429358 == "T/T" & rs7412 == "T/T" ~ "E2/E2",
+    	rs429358 == "T/T" & rs7412 == "C/T" ~ "E2/E3",
+    	rs429358 == "T/T" & rs7412 == "C/C" ~ "E3/E3",
+    	rs429358 == "C/T" & rs7412 == "C/C" ~ "E3/E4",
+    	rs429358 == "C/C" & rs7412 == "C/C" ~ "E4/E4",
+  ))
+
+```
+
+
+do for adjusted axpression in topmed
+
+```{r}
+
+expr<-fread("Z:/scratch/TOPMed_Proteome/investigate_APOE/ALL_expression.txt",header=T) %>% pivot_longer(!joint_id) %>%
+      mutate(name=as.numeric(name),isoform=case_when(
+        grepl("SL000276",joint_id) ~ "Apo E",
+        grepl("SL004668",joint_id) ~ "Apo E3",
+        grepl("SL004669",joint_id) ~ "Apo E4",
+        grepl("SL000277",joint_id) ~ "Apo E2"
+      ))
+topmed_expr_snp_matrix<-inner_join(expr,s,by=c("name"="rowname"))
+
+    
+ggplot(data=topmed_expr_snp_matrix,aes(x=APOE_geno,y=value)) +
+  geom_boxplot(aes(fill=isoform),alpha=0.5) +
+  theme_bw() +
+  scale_fill_viridis(discrete=T) #+
+  ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/ALL_adjusted_expr_isoform_geno_boxplot.png",dpi=500)
+
+```
+
+```{r}
+apoe_somamers<-c("APOE.2937.10.2","APOE.5312.49.3")
+apoe_expression<-fread("Z:/data/topmed_proteome_ashg_prep/protein_expr/INTERVAL_SOMALOGIC_POSTQC_GWASIN_PROTEINDATA_v1.tsv.cip") %>%
+  select(one_of(c("Sample_Name",apoe_somamers))) 
+apoe_expression<-apoe_expression %>% mutate(Sample_Name=as.character(Sample_Name)) %>% pivot_longer(!Sample_Name)
+apoe_expression<-apoe_expression %>% mutate(name=if_else(name=="APOE.2937.10.2","Apo E3","Apo E2"))
+apoe_snps<-fread("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_APOE_snps.txt")
+s<-apoe_snps %>% select(-chr,-snp_ID,-pos,-ref,-alt,-AA_freq) %>% t() %>% as.data.frame() %>% rownames_to_column() %>%
+  rename(rs429358="V1", rs7412="V2") %>%
+  mutate(rowname=as.character(rowname),rs429358=round(rs429358,0),rs7412=round(rs7412,0),
+         rs429358=if_else(rs429358==0,"T/T",
+                          if_else(rs429358==1,"C/T","C/C")),
+         rs7412=if_else(rs7412==0,"C/C",
+                        if_else(rs7412==1,"C/T","T/T"))) %>%
+  mutate(APOE_geno=case_when(
+    	rs429358 == "C/C" & rs7412 == "T/T" ~ "E1/E1",
+    	rs429358 == "C/T" & rs7412 == "T/T" ~ "E1/E2",
+    	rs429358 == "C/T" & rs7412 == "C/T" ~ "ambiguous/E2/E4",
+    	rs429358 == "C/C" & rs7412 == "C/T" ~ "E1/E4",
+    	rs429358 == "T/T" & rs7412 == "T/T" ~ "E2/E2",
+    	rs429358 == "T/T" & rs7412 == "C/T" ~ "E2/E3",
+    	rs429358 == "T/T" & rs7412 == "C/C" ~ "E3/E3",
+    	rs429358 == "C/T" & rs7412 == "C/C" ~ "E3/E4",
+    	rs429358 == "C/C" & rs7412 == "C/C" ~ "E4/E4",
+  )) 
+interval_expr_snp_matrix<-inner_join(apoe_expression,s,by=c("Sample_Name"="rowname"))
+```
+
+
+```{r}
+topmed_expr_snp_matrix<-topmed_expr_snp_matrix %>% mutate(study="TOPMed ALL") %>% select(-joint_id)
+colnames(topmed_expr_snp_matrix)
+interval_expr_snp_matrix<-interval_expr_snp_matrix %>% mutate(study="INTERVAL")
+colnames(interval_expr_snp_matrix)<-c("name","isoform","value", "rs429358" ,"rs7412","APOE_geno","study")
+expr_snp_matrix<<-rbind.data.frame(topmed_expr_snp_matrix,interval_expr_snp_matrix)
+
+
+expr_snp_matrix %>% 
+  filter(!(APOE_geno %in% c("ambiguous/E2/E4","E2/E2"))) %>%
+  mutate(study=factor(study, levels=c("TOPMed ALL","INTERVAL"))) %>%
+  ggplot(data=.,aes(x=APOE_geno,y=value)) +
+  geom_boxplot(aes(fill=isoform),alpha=0.7) +
+  theme_bw() +
+  labs(fill="Target\nIsoform") +
+  ylab("Normalized Protein Abundance") +
+  xlab("APOE Genotype") +
+  facet_wrap(~study,ncol=1) +
+  scale_fill_viridis(discrete=T) +
+  ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_TOPMED_adjusted_expr_isoform_geno_boxplot.png",dpi=700)+
+  ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_TOPMED_adjusted_expr_isoform_geno_boxplot.pdf",dpi=700)+
+  ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_TOPMED_adjusted_expr_isoform_geno_boxplot.tiff",dpi=700)
+
+```
+
+
+
+#do statistical analysis
+
+```{r}
+library(lme4)
+library(lmerTest)
+
+topmed_model<-lmer(value ~  isoform + APOE_geno + (1 | name), data=expr_snp_matrix[expr_snp_matrix$study=="TOPMed ALL",])
+INTERVAL_model<-lmer(value ~  isoform + APOE_geno + (1 | name), data=expr_snp_matrix[expr_snp_matrix$study=="INTERVAL",])
+summary(model)
+
+#hard code it as well
+#E2/e3/e4 staus is assinged on the dosage for two effect alleles so it is appropriate to code like this
+hard_coded_expr_snp_matrix <-expr_snp_matrix %>%
+  mutate(APOE_geno_dose=case_when(
+    APOE_geno == "E2/E2" ~ 0,
+    APOE_geno == "E2/E3" ~ 1,
+    APOE_geno == "E3/E3" ~ 2,
+    APOE_geno == "E3/E4" ~ 3,
+    APOE_geno == "E4/E4" ~ 4
+  ))
+TOPMed_model2<-lmer(value ~  isoform + APOE_geno_dose + (1 | name), data = hard_coded_expr_snp_matrix[hard_coded_expr_snp_matrix$study=="TOPMed ALL",])
+INTERVAL_model2<-lmer(value ~  isoform + APOE_geno_dose + (1 | name), data = hard_coded_expr_snp_matrix[hard_coded_expr_snp_matrix$study=="INTERVAL",])
+anova(TOPMed_model2)
+summary(TOPMed_model2)$coefficients[,'Estimate']
+anova(TOPMed_model2)[2,'Pr(>F)']
+anova(INTERVAL_model2)
+summary(INTERVAL_model2)$coefficients[,'Estimate']
+anova(INTERVAL_model2)[2,'Pr(>F)']
+```

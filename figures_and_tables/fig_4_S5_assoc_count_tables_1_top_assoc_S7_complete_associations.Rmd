@@ -1,0 +1,453 @@
+---
+title: "check replication"
+author: "Ryan Schubert"
+date: "April 5, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(viridis)
+library(RSQLite)
+library(cowplot)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+## now count how many hits replicate from PAGE into UKBB+
+
+how many page spred hits are ukbb spred hits
+how many page spred+coloc hits are ukbb spred hits
+how many page spred+coloc hits are ukbb spred+coloc hits
+
+```{r}
+filemap<-fread("Z:/data/ukbb_sum_stats/pheno_summary/phenotype_to_filename_map.csv",header=F)
+filemap<-filemap %>% 
+  mutate(V2=gsub("\\.gz","",V2),
+         V2=gsub("\\.bgz","",V2),
+         V2=gsub("\\.tsv","",V2),
+         V2=gsub("\\.csv","",V2),
+         V2=gsub("\\.txt","",V2),
+         V2=gsub("\\.hg38","",V2),
+         V2=gsub("\\.hs38","",V2),
+         V2=gsub("\\.dbgap","",V2))
+colnames(filemap)<-c("Phenotype","gwas_file")
+
+page_all_spred_dir<-"Z:/scratch/test_coloc_for_elyse/SPred_results/all_results/"
+ukbb_all_spred_dir<-"Z:/data/ukbb_sum_stats/spred_out/"
+model_vec<-c("baseline","dapg_0.001_F","dapg_0.001_T","dapg_0.01_F","dapg_0.01_T","dapg_0_F","dapg_0_T")
+#
+pav_vec<-c(F)
+model_list<-expand.grid(model_vec,pav_vec,stringsAsFactors = F)
+
+model_comparisons_list=vector(mode="list",nrow(model_list))
+
+#at each model level check replication in either direction
+for (m in 1:nrow(model_list)){
+  model_actual<-model_list[m,1]
+  pav<-model_list[m,2]
+  
+  #read in ukbb resuts for this model level
+  ukbb_spred_files<-list.files(ukbb_all_spred_dir,pattern=model_actual)
+  if (pav == T){
+    ukbb_spred_files<-ukbb_spred_files[grepl("PAV_filtered",ukbb_spred_files) & !grepl("csv",ukbb_spred_files)]
+  } else {
+    ukbb_spred_files<-ukbb_spred_files[!grepl("PAV_filtered",ukbb_spred_files) & !grepl("csv",ukbb_spred_files)]
+  }
+  ukbb_spred_list<-vector(mode="list",length(ukbb_spred_files))
+  for (f in 1:length(ukbb_spred_files)){
+    ukbb_spred_list[[f]]<-fread(ukbb_all_spred_dir %&% ukbb_spred_files[f]) %>% mutate(source=ukbb_spred_files[f])
+  }
+  ukbb_spred_list<-ukbb_spred_list[lapply(ukbb_spred_list,nrow)>0]
+  ukbb_spred_results<-bind_rows(ukbb_spred_list) %>%
+    mutate(model=str_extract(source,"[A-Z]+_PCAIR_[:graph:]+_rho0.1_zpval0.05"),
+           gwas_file=str_remove(source,"_Spred_[A-Z]+_PCAIR_[:graph:]+_rho0.1_zpval0.05"),
+           gwas_file=gsub("\\.hg38","",gwas_file),
+           gwas_file=gsub("\\.hs38","",gwas_file),
+           gwas_file=gsub("\\.dbgap","",gwas_file),
+           train_pop=substr(model,1,3),
+           PAV_filtered=if_else(grepl("PAV_filtered",model),"TRUE","FALSE"),
+           model=gsub("_PAV_filtered","",model),
+           model=gsub("[A-Z]+_PCAIR_","",model),
+           model=gsub("_rho0.1_zpval0.05","",model),
+           model=gsub("_models","",model),
+           model=gsub("dapg_","",model),
+           gene=gsub("\\.[0-9]+","",gene)) %>%
+      inner_join(filemap,by=c("gwas_file"))
+  ukbb_spred_results<-ukbb_spred_results %>% 
+    mutate(bonf_thresh=0.05/nrow(ukbb_spred_results)) %>%
+    select(gene,gene_name,zscore,effect_size,pvalue,var_g,n_snps_used,n_snps_in_model,model,train_pop,PAV_filtered,Phenotype,bonf_thresh) %>%
+    rename_with(.fn=function(x){paste("ukbb",x,sep="_")})
+  
+  #read in page results for this model level
+  page_spred_files<-list.files(page_all_spred_dir,pattern=model_actual)
+  if (pav == T){
+    page_spred_files<-page_spred_files[grepl("PAV_filtered",page_spred_files)]
+  } else {
+    page_spred_files<-page_spred_files[!grepl("PAV_filtered",page_spred_files)]
+  }
+  page_spred_results<-fread(page_all_spred_dir %&% page_spred_files)
+  page_spred_results<-page_spred_results %>% 
+    mutate(bonf_thresh=0.05/nrow(page_spred_results),
+           Phenotype=if_else(Phenotype=="LDL_choleseterol","LDL_cholesterol",Phenotype)) %>%
+    select(GENE,gene_name,zscore,effect_size,P,var_g,n_snps_used,n_snps_in_model,Model,pred_perf_r2,pred_perf_pval,Phenotype,bonf_thresh) %>%
+    rename(train_pop=Model) %>%
+    rename_with(.fn=function(x){paste("page",x,sep="_")})
+  model_comparisons_list[[m]]<-full_join(page_spred_results,ukbb_spred_results,by=c("page_GENE"="ukbb_gene","page_gene_name"="ukbb_gene_name","page_train_pop"="ukbb_train_pop","page_Phenotype"="ukbb_Phenotype")) %>%
+    rename(gene="page_GENE",gene_name="page_gene_name",train_pop="page_train_pop",Phenotype="page_Phenotype",model="ukbb_model",PAV_filtered="ukbb_PAV_filtered") %>%
+    mutate(model=model_actual,PAV_filtered=pav)
+}
+fwrite(bind_rows(model_comparisons_list),"Z:/scratch/TOPMed_Proteome/08PWAS/tmp_all_results.csv")
+
+
+
+#how many page spred hits at
+#ukbb bonf significant
+#page bonf signif
+#bonf signif for number of proteins tested for replication
+
+```
+
+
+```{r}
+all_results<-bind_rows(model_comparisons_list)
+# all_results<-fread("Z:/scratch/TOPMed_Proteome/08PWAS/tmp_all_results.csv",showProgress = T)
+# # cor.test(all_results$page_zscore,all_results$ukbb_zscore,use="complete.obs")
+# # ggplot(data=all_results,aes(x=page_zscore,y=ukbb_zscore)) +
+# #   geom_point() + 
+# #   theme_bw() + 
+# #   geom_smooth(method="lm")
+# 
+# vec1<-unique(page_coloc_results$phenotype) 
+# 
+# vec2<-unique(all_results$Phenotype)
+# sort(vec1) == sort(vec2)
+```
+
+```{r}
+#read in coloc data
+page_coloc_results<-fread("Z:/scratch/TOPMed_Proteome/08PWAS/PAGE_coloc_results.csv") %>% 
+  group_by(train_pop,phenotype,gene) %>% 
+  slice_max(PP.H4.abf,n=1) %>% 
+  ungroup()
+ukbb_coloc_results<-fread("Z:/scratch/TOPMed_Proteome/08PWAS/UKBB_coloc_results.csv") %>%
+  group_by(train_pop,phenotype,gene) %>% 
+  slice_max(PP.H4.abf,n=1) %>% 
+  ungroup() %>%
+  mutate(gene=gsub("\\.[0-9]+","",gene))
+
+
+page_bonf_counts<-all_results %>% filter(!is.na(page_zscore),page_P < page_bonf_thresh) %>% count(model,train_pop) %>% mutate(loose_threshold=0.05/n)
+ukbb_bonf_counts<-all_results %>% filter(ukbb_pvalue < ukbb_bonf_thresh) %>% count(model,train_pop) %>% mutate(loose_threshold=0.05/n)
+
+
+(page_spred_count_plot <- all_results %>% 
+  filter(page_P < page_bonf_thresh) %>% 
+  mutate(model=gsub("dapg_","",model),train_pop=if_else(train_pop=="CAU","EUR",train_pop)) %>%
+  count(model,train_pop) %>%
+    ggplot(data=.,aes(x=model,y=n)) +
+  geom_col(aes(fill=train_pop),position="dodge") +
+  labs(fill="Training Population") +
+  theme_bw() +
+    theme(axis.title.x=element_blank()) +
+  ylab("N S-PrediXcan\nSignificant") +
+  scale_fill_viridis(discrete=T))
+
+(page_spred_count_focused_plot <- all_results %>% 
+  filter(page_P < page_bonf_thresh) %>% 
+  mutate(model=gsub("dapg_","",model)) %>% 
+    filter(model %in% c("baseline","0.001_T")) %>%
+    mutate(train_pop=if_else(train_pop=="CAU","EUR",train_pop),
+           model=if_else(model=="0.001_T","fine-mapped",model)) %>%
+  count(model,train_pop) %>%
+    ggplot(data=.,aes(x=model,y=n)) +
+  geom_col(aes(fill=train_pop),position="dodge") +
+  labs(fill="Training Population") +
+  theme_bw() +
+    theme(axis.title.x=element_blank()) +
+  ylab("N S-PrediXcan\nSignificant") +
+  scale_fill_viridis(discrete=T))
+
+page_discoveries<-all_results %>% 
+  inner_join(page_coloc_results,by=c("gene","train_pop","Phenotype"="phenotype")) %>%
+  filter(page_P < page_bonf_thresh,PP.H4.abf >0.5) %>% 
+  mutate(model=gsub("dapg_","",model)) %>%
+  count(model,train_pop)
+
+(page_discoveries_plot<-page_discoveries %>%
+    mutate(train_pop=if_else(train_pop=="CAU","EUR",train_pop)) %>%
+  ggplot(data=.,aes(x=model,y=n)) +
+  geom_col(aes(fill=train_pop),position="dodge") +
+  labs(fill="Training Population") +
+  theme_bw() +
+    theme(axis.title.x=element_blank()) +
+  ylab("N S-PrediXcan &\nCOLOC Significant") +
+  scale_fill_viridis(discrete=T))
+
+(page_discoveries_focused_plot<-page_discoveries %>%
+      filter(model %in% c("baseline","0.001_T")) %>%
+    mutate(train_pop=if_else(train_pop=="CAU","EUR",train_pop),
+           model=if_else(model=="0.001_T","fine-mapped",model)) %>%
+  ggplot(data=.,aes(x=model,y=n)) +
+  geom_col(aes(fill=train_pop),position="dodge") +
+  labs(fill="Training Population") +
+  theme_bw() +
+    theme(axis.title.x=element_blank()) +
+  ylab("N S-PrediXcan &\nCOLOC Significant") +
+  scale_fill_viridis(discrete=T))
+
+#how many bonf page hits have the same sign in ukbb, have the ukbb pval meet a strict bonf threshold, and are colocalized in page
+
+page_bonf_colocalized_ukbb_strict<-all_results %>% 
+  inner_join(page_bonf_counts,by=c("model","train_pop")) %>% 
+  inner_join(page_coloc_results,by=c("gene","train_pop","Phenotype"="phenotype")) %>%
+  mutate(model=gsub("dapg_","",model)) %>%
+  filter(page_P < page_bonf_thresh, sign(page_zscore) == sign(ukbb_zscore),ukbb_pvalue < ukbb_bonf_thresh,PP.H4.abf > 0.5) %>% 
+  count(model,train_pop)
+
+page_results_focused<-page_bonf_colocalized_ukbb_strict %>% 
+  filter(model %in% c("0.001_T","baseline")) %>%
+  mutate(train_pop=if_else(train_pop=="CAU","EUR",train_pop),
+         model=if_else(model=="0.001_T","fine-mapped",model)) %>%
+  ggplot(data=.,aes(x=model,y=n)) +
+  geom_col(aes(fill=train_pop),position="dodge") +
+  theme_bw() +
+  ylab("N Replicated") +
+  labs(fill="Training Population") +
+  scale_fill_viridis(discrete=T)
+
+
+page_results<-page_bonf_colocalized_ukbb_strict %>% 
+  mutate(train_pop=if_else(train_pop=="CAU","EUR",train_pop)) %>%
+  ggplot(data=.,aes(x=model,y=n)) +
+  geom_col(aes(fill=train_pop),position="dodge") +
+  theme_bw() +
+  ylab("N Replicated") +
+  labs(fill="Training Population") +
+  scale_fill_viridis(discrete=T)
+
+
+legend <- get_legend(
+  page_results_focused + 
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom")
+)
+
+grid<-plot_grid(page_spred_count_focused_plot + theme(legend.position="none"),
+                page_discoveries_focused_plot + theme(legend.position="none"),
+                page_results_focused + theme(legend.position="none"),
+                labels = c("A","B","C"),
+                align="v",
+                ncol=1) 
+plot_grid(grid,legend,ncol = 1, rel_heights = c(1, .1)) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/PAGE_spred_coloc_rep.pdf",dpi=700,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/PAGE_spred_coloc_rep.png",dpi=700,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/PAGE_spred_coloc_rep.tiff",dpi=700,height=7,width=7) 
+
+legend <- get_legend(
+  page_results + 
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom")
+)
+
+grid<-plot_grid(page_spred_count_plot + theme(legend.position="none"),
+                page_discoveries_plot + theme(legend.position="none"),
+                page_results + theme(legend.position="none"),
+                labels = c("A","B","C"),
+                align="v",
+                ncol=1) 
+plot_grid(grid,legend,ncol = 1, rel_heights = c(1, .1)) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PAGE_spred_coloc_rep.pdf",dpi=700,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PAGE_spred_coloc_rep.png",dpi=700,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_PAGE_spred_coloc_rep.tiff",dpi=700,height=7,width=7) 
+```
+
+
+
+```{r}
+
+page_bonf_colocalized_ukbb_strict<-all_results %>%
+  inner_join(page_coloc_results,by=c("gene","train_pop","Phenotype"="phenotype")) %>%
+  mutate(model=gsub("dapg_","",model)) %>%
+  filter(page_P < page_bonf_thresh ,PP.H4.abf > 0.5) %>%
+  mutate(replicated=if_else((sign(page_zscore) == sign(ukbb_zscore)) & (ukbb_pvalue < ukbb_bonf_thresh),T,F))
+
+hits<-page_bonf_colocalized_ukbb_strict %>% filter(replicated==T, model %in%c("baseline","0.001_T")) %>% select(gene,Phenotype,replicated) %>% arrange() %>% distinct()
+
+soma_uniprot_map<-fread("Z:/scratch/TOPMed_Proteome/06Elastic_net/PAV_modeling_methods/01PAV_annotation/somascan1.3k_aptamer_info.txt") %>% select(SomaId,TargetFullName,Target,UniProt,EntrezGeneSymbol) %>% arrange() %>% distinct()
+
+library(tidyr)
+hits<-hits %>% separate(gene,into=c("SomaId","gene")) %>%
+  inner_join(soma_uniprot_map,by=c("SomaId","gene")) %>% arrange(Target)
+fwrite(hits,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/annotated_associaitons.csv")
+```
+
+create supplemental table 7
+
+```{r}
+page_bonf_colocalized_ukbb_strict<-all_results %>%
+  inner_join(page_coloc_results,by=c("gene","train_pop","Phenotype"="phenotype")) %>%
+  rename(PAGE_PP.H4.abf="PP.H4.abf",pred_perf_r2="page_pred_perf_r2",pred_perf_pval="page_pred_perf_pval") %>% select(-hit1,-hit2,-source) %>%
+  full_join(ukbb_coloc_results, by=c("gene","train_pop","Phenotype"="phenotype")) %>%
+  rename(ukbb_PP.H4.abf="PP.H4.abf") %>% select(-hit1,-hit2,-source) %>%
+  mutate(model=gsub("dapg_","",model)) %>%
+  filter(page_P < page_bonf_thresh) %>%
+  mutate(replicated=if_else((sign(page_zscore) == sign(ukbb_zscore)) & (ukbb_pvalue < ukbb_bonf_thresh),T,F))
+
+
+supplemental_table<- page_bonf_colocalized_ukbb_strict %>% select(gene,Phenotype,train_pop,	model,
+                                                                  pred_perf_r2,pred_perf_pval,page_zscore,	
+                                                                  page_effect_size,	page_P,	page_var_g,	ukbb_zscore,
+                                                                  ukbb_effect_size,	ukbb_pvalue,	ukbb_var_g,
+                                                                  PAGE_PP.H4.abf,ukbb_PP.H4.abf) %>%
+  mutate(train_pop=if_else(train_pop=="CAU","EUR",train_pop)) %>% separate(gene,into=c("SomaId","gene")) 
+
+s7<-supplemental_table %>%
+  inner_join(soma_uniprot_map,by=c("SomaId"))
+
+fwrite(s7,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/full_annotated_SPrediXcan hits.csv")
+
+top_hits<-supplemental_table %>% 
+  filter(PAGE_PP.H4.abf > 0.5, replicated==T,model %in% c("baseline","0.001_T")) %>%
+  group_by(gene,Phenotype) %>%
+  slice_min(n=1,page_P)
+
+strict_top_hits<-supplemental_table %>% 
+  filter(PAGE_PP.H4.abf > 0.5, ukbb_PP.H4.abf > 0.5, replicated==T,model %in% c("baseline","0.001_T"))
+table(strict_top_hits$model)
+```
+
+```{r}
+PAV_filtered_results<-fread("Z:/scratch/TOPMed_Proteome/08PWAS/PAGE_bonf_signif/PAGE_PCAIR_baseline_PAV_adjusted_all_results_S-Pred_hits.csv") %>% 
+  select(gene,phenotype,train_pop,zscore,effect_size,pred_perf_r2,pred_perf_pval,pvalue) %>%
+  mutate(gene=gsub("\\.[0-9]+","",gene)) %>%
+  rename(pav_adj_effect="effect_size",pav_adj_pvalue="pvalue",pav_adj_pred_perf_r2="pred_perf_r2",pav_adj_pred_perf_pval="pred_perf_pval")
+PAV_filtered_results<-PAV_filtered_results %>% mutate(pav_bonf=0.05/nrow(PAV_filtered_results))
+
+
+page_results_PAV_adj<-page_bonf_colocalized_ukbb_strict %>% inner_join(PAV_filtered_results,by=c("gene","Phenotype"="phenotype","train_pop"))
+
+
+# how many distinct associations are there in  page
+page_bonf_colocalized_ukbb_strict %>% filter(model %in% c("baseline")) %>% select(gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()
+#how many of those associations are still present when doing pav adjustment
+page_results_PAV_adj %>% filter(model %in% c("baseline")) %>% filter(pav_adj_pvalue < pav_bonf) %>% select(gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()
+
+#how many distinct associations are also colocalized and replicate in UKBB
+page_bonf_colocalized_ukbb_strict %>% 
+  filter(PAGE_PP.H4.abf > 0.5,sign(page_zscore) == sign(ukbb_zscore) , ukbb_pvalue < ukbb_bonf_thresh,model %in% c("baseline")) %>% select(gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()
+#how many distinct associations are also colocalized and replicate in UKBB after adjusting for pavs
+page_results_PAV_adj  %>% 
+  filter(PAGE_PP.H4.abf > 0.5,sign(page_zscore) == sign(ukbb_zscore) , ukbb_pvalue < ukbb_bonf_thresh,model %in% c("baseline"),pav_adj_pvalue < pav_bonf) %>% select(gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()
+
+page_results_PAV_adj<-page_bonf_colocalized_ukbb_strict %>% left_join(PAV_filtered_results,by=c("gene","Phenotype"="phenotype","train_pop")) %>%
+  separate(gene,into=c("SomaId","gene")) %>%
+  inner_join(soma_uniprot_map,by=c("SomaId"))
+
+#add n PAVs to table
+
+
+
+
+fwrite(page_results_PAV_adj,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/full_annotated_protein_results.csv")
+```
+
+
+append nPAV to table
+
+```{r}
+table<-fread("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/full_annotated_protein_results.csv")
+db_dir<-"Z:/scratch/TOPMed_Proteome/06Elastic_net/PAV_modeling/db_out/"
+dbs<-list.files(db_dir,"*unfiltered.db")
+db_list<-vector(mode="list",length(dbs))
+driver <- dbDriver('SQLite')
+for( i in 1:length(dbs)){
+  con<-dbConnect(driver,db_dir %&% dbs[i])
+  db_list[[i]]<-dbReadTable(con,"extra") %>% select(gene,n_PAVs_found,pred.perf.R2,pred.perf.pval) %>% mutate(source=dbs[i])
+}
+db_df<-bind_rows(db_list) %>% separate(gene,into=c("SomaId","gene")) %>%
+  mutate(train_pop=substr(source,1,3)) %>% select(-source)
+res_with_n_PAV<-left_join(table,db_df,by=c("SomaId","gene","train_pop")) %>%
+  mutate(pav_adj_pred_perf_r2=pred.perf.R2,pav_adj_pred_perf_pval=pred.perf.pval) %>% select(-pred.perf.R2,-pred.perf.pval)
+fwrite(res_with_n_PAV,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/full_annotated_protein_results.csv")
+```
+
+
+```{r}
+db_dir<-"Z:/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/db/"
+dbs<-list.files(db_dir,"*unfiltered.db")
+db_list<-vector(mode="list",length(dbs))
+driver <- dbDriver('SQLite')
+for( i in 1:length(dbs)){
+  con<-dbConnect(driver,db_dir %&% dbs[i])
+  db_list[[i]]<-dbReadTable(con,"extra") %>% select(gene,pred.perf.R2,pred.perf.pval,n_PAVs_found) %>% mutate(source=dbs[i])
+}
+db_df<-bind_rows(db_list) %>% separate(gene,into=c("SomaId","gene")) %>%
+  mutate(train_pop=substr(source,1,3)) %>% select(-source)
+
+```
+
+```{r}
+apoe_page_dir<-"Z:/scratch/TOPMed_Proteome/investigate_APOE/PAGE_spred/"
+apoe_page_files<-list.files(apoe_page_dir)
+apoe_page_list<-vector(mode="list",length(apoe_page_files))
+for (i in 1:length(apoe_page_files)){
+  apoe_page_list[[i]]<-fread(apoe_page_dir %&% apoe_page_files[i]) %>% mutate(source=apoe_page_files[i])
+}
+apoe_page_list<-apoe_page_list[sapply(apoe_page_list, nrow) > 0]
+apoe_page_df<-bind_rows(apoe_page_list) %>% 
+  separate(gene,into=c("SomaId","gene"),sep="_") %>% 
+  mutate(phenotype=gsub("_[A-Z]+_APOE_PAV_adj\\.csv","",source),
+         train_pop=str_remove(source,phenotype %&% "_"),
+         train_pop=substr(train_pop,1,3),
+         gene=gsub("\\.[0-9]+","",gene)) %>% 
+  select(SomaId,gene,train_pop,phenotype,zscore,effect_size,pvalue) %>%
+  rename_with(.fn=function(x){paste0("APOE_adj_",x)})
+#db_df<-bind_rows(db_list) %>% separate(gene,into=c("SomaId","gene")) %>% mutate(train_pop=substr(source,1,3)) %>% select(-source)
+```
+
+```{r }
+
+append_APOE_results<-left_join(res_with_n_PAV,db_df,by=c("SomaId","gene","train_pop")) %>% left_join(apoe_page_df,by=c("SomaId"="APOE_adj_SomaId","gene"="APOE_adj_gene","train_pop"="APOE_adj_train_pop","Phenotype"="APOE_adj_phenotype"))
+# fwrite(res_with_n_PAV,"C:\\Users\\rshoo\\OneDrive\\Desktop\\Wheeler lab\\full_annotated_protein_results_nPAV_apoe_results.csv")
+fwrite(append_APOE_results,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/full_annotated_protein_results_nPAV_apoe_results.csv")
+```
+
+
+```{r}
+annotated_results<-fread("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/full_annotated_protein_results_nPAV_apoe_results.csv")
+db_df<-rename(db_df,apoe_n_pav="n_PAVs_found")
+annotated_results<-annotated_results %>% left_join(db_df,by=c("SomaId","gene","train_pop","pred.perf.R2","pred.perf.pval"))
+annotated_results<-annotated_results %>%
+  mutate(actual_adjusted_pval=if_else(EntrezGeneSymbol=="APOE",APOE_adj_pvalue,pav_adj_pvalue),
+         actual_adjusted_effect_size=if_else(EntrezGeneSymbol=="APOE",APOE_adj_effect_size,pav_adj_effect),
+         actual_adjusted_zscore=if_else(EntrezGeneSymbol=="APOE",APOE_adj_zscore,zscore),
+         actual_adjusted_pred_perf_r2=if_else(EntrezGeneSymbol=="APOE",pred.perf.R2,pav_adj_pred_perf_r2),
+         actual_adjusted_pred_perf_pval=if_else(EntrezGeneSymbol=="APOE",pred.perf.pval,pav_adj_pred_perf_pval),
+         actual_nPAV=if_else(EntrezGeneSymbol=="APOE",apoe_n_pav,n_PAVs_found))
+fwrite(annotated_results,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/full_annotated_protein_results_nPAV_actual.csv")
+```
+
+## summarise
+
+how many distinct bonferonni hits were there in baseline?
+how many distinct hits are the same between baseline and pav adjusted baseline?
+how many of our "gold standard" hits are still bonferroni significant after pav adjustment?
+
+```{r}
+#how many distinct bonferonni hits were there in baseline?
+baseline_results %>% select(SomaId,gene,Phenotype) %>% arrange() %>% distinct() %>% nrow() 
+
+#how many distinct hits are the same between baseline and pav adjusted baseline?  Accounting for APOE
+baseline_results <-mutate(baseline_results,actual_adjusted_pval=if_else(EntrezGeneSymbol=="APOE",APOE_adj_pvalue,pav_adj_pvalue))
+baseline_results %>% filter(pav_adj_pvalue < page_bonf_thresh) %>% select(SomaId,gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()  
+baseline_results %>% filter(actual_adjusted_pval < page_bonf_thresh) %>% select(SomaId,gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()
+
+#how many of our "gold standard" hits are still bonferroni significant after pav adjustment?
+gold_standard<-baseline_results %>% filter(ukbb_pvalue < ukbb_bonf_thresh, sign(page_zscore) == sign(ukbb_zscore), PAGE_PP.H4.abf > 0.5)
+gold_standard %>% select(SomaId,gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()  
+gold_standard %>% filter(pav_adj_pvalue < page_bonf_thresh) %>% select(SomaId,gene,Phenotype) %>% arrange() %>% distinct() %>% nrow()  
+gold_standard %>% filter(actual_adjusted_pval < page_bonf_thresh) %>% select(Target,gene,Phenotype) %>% arrange() %>% distinct() 
+```

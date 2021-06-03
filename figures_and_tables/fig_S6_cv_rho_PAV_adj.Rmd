@@ -1,0 +1,225 @@
+---
+title: "compare PAV adj model to base model"
+author: "Ryan Schubert"
+date: "April 29, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(RSQLite)
+library(tidyr)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+## read standard models
+
+```{r}
+
+pop_list<-c("CAU","CHN","AFA","HIS","ALL")
+model_counts_list<-list()
+for ( pop in 1:length(pop_list)){
+  files<-list.files("Z:/data/TOPMED_Proteome/" %&% pop_list[pop] %&% "/PCAIR_modeling/06Elastic_net/dbs_out/",pattern="*baseline_models_unfiltered.db")
+  file_list<-list()
+  for ( i in 1: length(files)){
+    con <- dbConnect(RSQLite::SQLite(), "Z:/data/TOPMED_Proteome/" %&% pop_list[pop] %&% "/PCAIR_modeling/06Elastic_net/dbs_out/" %&% files[i])
+    extra<-dbReadTable(con,"extra") %>% separate(gene,into=c("apt","ENSG"),remove=F) %>%
+      mutate(model=files[i],
+             ENSG=gsub("\\.[0-9]+","",ENSG))
+    file_list[[i]]<-extra
+  }
+  model_counts_list[[pop]]<-bind_rows(file_list) 
+}
+
+base_summaries<-bind_rows(model_counts_list) %>%
+  dplyr::select(gene,n.snps.in.window,n.snps.in.model,rho_avg,pred.perf.pval,model) %>%
+  mutate(train_pop=substr(model,1,3)) %>%
+  rename_with(.fn=function(x){paste0("base_",x)})
+```
+
+## read in PAV adj models
+
+```{r}
+
+pop_list<-c("CAU","CHN","AFA","HIS","ALL")
+model_counts_PAV_adj_list<-list()
+
+files<-list.files("Z:/scratch/TOPMed_Proteome/06Elastic_net/PAV_modeling/db_out/",pattern="*baseline_PAV_adj_models_unfiltered.db")
+file_list<-list()
+for ( i in 1: length(files)){
+  con <- dbConnect(RSQLite::SQLite(), "Z:/scratch/TOPMed_Proteome/06Elastic_net/PAV_modeling/db_out/" %&% files[i])
+  extra<-dbReadTable(con,"extra") %>% separate(gene,into=c("apt","ENSG"),remove=F) %>%
+    mutate(model=files[i],
+           ENSG=gsub("\\.[0-9]+","",ENSG))
+  file_list[[i]]<-extra
+}
+PAV_adj_summaries<-bind_rows(file_list) %>%
+  dplyr::select(gene,n.snps.in.window,n_PAVs_found,n.snps.in.model,rho_avg,pred.perf.pval,model) %>%
+  mutate(train_pop=substr(model,1,3)) %>%
+  rename_with(.fn=function(x){paste0("PAV_adj_",x)})
+
+
+```
+
+## fetch corrected APOE models
+
+```{r}
+apoe_dir<-"Z:/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/out/"
+apoe_files<-list.files(apoe_dir,pattern="*model_summaries.txt")
+apoe_list<-vector(mode="list",length(apoe_files))
+for (i in 1:length(apoe_list)){
+  apoe_list[[i]]<-fread(apoe_dir %&% apoe_files[i]) %>% mutate(model=apoe_files[i])
+}
+apoe_df<-bind_rows(apoe_list) %>%
+  rename(gene = gene_id,
+         genename = gene_name,
+         n.snps.in.window = n_snps_in_window,
+         n.snps.in.model = n_snps_in_model,
+         pred.perf.R2 = rho_avg_squared,
+         pred.perf.pval = zscore_pval) %>%
+  dplyr::select(gene,n.snps.in.window,n_PAVs_found,n.snps.in.model,rho_avg,pred.perf.pval,model) %>%
+  mutate(train_pop=substr(model,1,3)) %>%
+  rename_with(.fn=function(x){paste0("PAV_adj_",x)})
+apoe_aptamers<-unique(apoe_df$PAV_adj_gene)
+PAV_adj_summaries<-PAV_adj_summaries %>% filter(!(PAV_adj_gene %in% apoe_aptamers))  %>% rbind.data.frame(apoe_df)
+
+```
+
+## Compare the two 
+
+```{r}
+compare_perfromances<-inner_join(base_summaries,PAV_adj_summaries,by=c("base_gene"="PAV_adj_gene","base_train_pop"="PAV_adj_train_pop")) %>%
+  mutate(adjusted=if_else(PAV_adj_n_PAVs_found !=0, "adjusted","unadjusted"))
+
+ggplot(data=compare_perfromances,aes(y=PAV_adj_rho_avg,x=base_rho_avg,colour=adjusted)) + 
+  geom_point() +
+  theme_bw() +
+  geom_abline(slope=1,intercept=0) +
+  facet_wrap(~base_train_pop) 
+
+compare_perfromances %>%
+  filter(base_rho_avg > 0.1,base_pred.perf.pval < 0.05) %>%
+  ggplot(data=.,aes(y=PAV_adj_rho_avg,x=base_rho_avg,colour=adjusted)) + 
+  geom_point() +
+  theme_bw() +
+  geom_abline(slope=1,intercept=0) +
+  facet_wrap(~base_train_pop) 
+compare_perfromances %>%
+  filter(base_rho_avg > 0.1,base_pred.perf.pval < 0.05,adjusted=="adjusted") %>%
+  ggplot(data=.,aes(y=PAV_adj_rho_avg,x=base_rho_avg,colour=adjusted)) + 
+  geom_point() +
+  theme_bw() +
+  geom_abline(slope=1,intercept=0) +
+  facet_wrap(~base_train_pop)
+compare_perfromances %>%
+  filter(base_rho_avg > 0.1,base_pred.perf.pval < 0.05,PAV_adj_rho_avg > 0.1,PAV_adj_pred.perf.pval < 0.05,adjusted=="adjusted") %>%
+  ggplot(data=.,aes(y=PAV_adj_rho_avg,x=base_rho_avg,colour=adjusted)) + 
+  geom_point() +
+  theme_bw() +
+  geom_abline(slope=1,intercept=0) +
+  facet_wrap(~base_train_pop)
+
+hist(PAV_adj_summaries$PAV_adj_n_PAVs_found)
+```
+## Identify dropouts
+
+how many with base rho>0.1 drop more than 0.1 in adj?
+
+```{r}
+significant_model_dropout<-compare_perfromances %>%
+  mutate(dropout=base_rho_avg - PAV_adj_rho_avg) %>% 
+  filter(base_rho_avg > 0.1,base_pred.perf.pval < 0.05)
+significant_model_dropout %>%
+  filter(base_train_pop == "CHN") %>%
+  ggplot(data=.,aes(x=dropout)) +
+  geom_histogram() +
+  theme_bw() +
+  facet_grid(~adjusted)
+
+count_dropout<-significant_model_dropout %>% 
+  filter(dropout > 0.1) %>%
+  select(base_gene,base_train_pop,adjusted) %>%
+  arrange() %>% distinct() %>%
+  count(base_train_pop,adjusted)
+
+count_dropout %>%
+  mutate(base_train_pop=if_else(base_train_pop=="CAU","EUR",base_train_pop)) %>%
+  ggplot(data=.,aes(x=adjusted,y=n,fill=base_train_pop)) +
+  geom_col(position=position_dodge()) +
+  theme_bw() +
+  scale_fill_viridis(discrete=T) +
+  ylab("N dropout") +
+  ggtitle("N models change in CV Rho avg > 0.1") +
+  labs(fill="Training\nPopulation")
+```
+
+
+#count bins
+how many lose significance entirely
+many are still significant but reduce performance (also the the mean of this)
+how many are unadjusted
+```{r}
+binning<-significant_model_dropout %>% 
+  mutate(dropout_bin=if_else(adjusted=="unadjusted","unadjusted",
+                             if_else(!(PAV_adj_rho_avg > 0.1 | PAV_adj_pred.perf.pval < 0.05),"not significant",
+                                     if_else(dropout < 0.1, "marginal reduction","large reduction")))) 
+table(binning$dropout_bin)
+table(binning$dropout_bin)/nrow(binning)*100
+table(binning$base_train_pop)
+binning %>%
+  select(base_gene,base_train_pop,dropout_bin) %>%
+  arrange() %>% distinct() %>%
+  count(base_train_pop,dropout_bin)
+
+binning %>%
+  mutate(base_train_pop=if_else(base_train_pop=="CAU","EUR",base_train_pop)) %>%
+  ggplot(data=.,aes(y=PAV_adj_rho_avg,x=base_rho_avg,colour=dropout_bin)) + 
+  geom_abline(slope=1,intercept=0) +
+  geom_point() +
+  theme_bw() +
+  xlab("Baseline CV rho") +
+  ylab("PAV adjusted CV rho") +
+  facet_wrap(~base_train_pop) +
+  labs(colour="change in performance") +
+  scale_colour_viridis(discrete=T) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_cv_rho_PAV_adj_scatter.png",dpi=500,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_cv_rho_PAV_adj_scatter.pdf",dpi=500,height=7,width=7)
+
+binning %>%
+  mutate(base_train_pop=if_else(base_train_pop=="CAU","EUR",base_train_pop)) %>%
+  ggplot(data=.,aes(y=PAV_adj_rho_avg,x=base_rho_avg,colour=adjusted)) + 
+  geom_abline(slope=1,intercept=0) +
+  geom_point() +
+  theme_bw() +
+  xlab("Baseline CV rho") +
+  ylab("PAV adjusted CV rho") +
+  facet_wrap(~base_train_pop) +
+  scale_colour_viridis(discrete=T) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_cv_rho_PAV_adj_scatter_binned.png",dpi=500,height=7,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_cv_rho_PAV_adj_scatter_binned.pdf",dpi=500,height=7,width=7)
+
+binning %>%
+  mutate(base_train_pop=if_else(base_train_pop=="CAU","EUR",base_train_pop)) %>%
+  ggplot(data=.,aes(y=PAV_adj_rho_avg,x=base_rho_avg,colour=adjusted)) + 
+  geom_abline(slope=1,intercept=0) +
+  geom_point() +
+  theme_bw() +
+  xlab("Baseline CV rho") +
+  ylab("PAV adjusted CV rho") +
+  facet_wrap(~base_train_pop) +
+  scale_colour_viridis(labels = c("No PAV present", "Adjusted"),discrete=T) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_cv_rho_PAV_adj_scatter_binned_presentation.png",dpi=500,height=4.5,width=7) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_cv_rho_PAV_adj_scatter_binned_presentation.pdf",dpi=500,height=4.5,width=7)
+
+```
+
+
+
+```{r}
+
+PAV_adj_summaries %>% dplyr::select(PAV_adj_gene,PAV_adj_train_pop,PAV_adj_n_PAVs_found)  %>%
+  fwrite(.,"Z:/scratch/TOPMed_Proteome/06Elastic_net/PAV_modeling/adj_protein_list.csv")
+```

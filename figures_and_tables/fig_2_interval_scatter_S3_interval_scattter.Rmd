@@ -1,0 +1,163 @@
+---
+title: "compare base to fm nice scatter plot"
+author: "Ryan Schubert"
+date: "February 23, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(tibble)
+library(RSQLite)
+library(stringr)
+"%&%" = function(a,b) paste(a,b,sep="")
+```
+
+# first we want to do this comparison for the interval prediction
+
+```{r }
+cor_dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/"
+pops<-c("AFA","CHN","CAU","ALL","HIS")
+pop_list<-vector(mode="list",length=length(pops))
+
+pop<-"AFA"
+for (pop in pops){
+  base<-fread(cor_dir %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% 
+    rename_with(.fn=function(x){return(paste(x,"base",sep="_"))})
+  base_pav<-fread(cor_dir %&% pop %&% "_PCAIR_baseline_models_PAV_filtered_rho0.1_zpval0.05_correlation.txt") %>% 
+    rename_with(.fn=function(x){return(paste(x,"base",sep="_"))})
+  files<-list.files(cor_dir,pattern=pop %&% "_PCAIR_dapg_*")
+  compare_list<-vector(mode="list",length=length(files))
+  f<-1
+  for (f in 1:length(files))  {
+    tmp<-fread(cor_dir %&% files[f]) %>% 
+      rename_with(.fn=function(x){return(paste(x,"fm",sep="_"))}) %>%
+      mutate(fm_source=files[f])
+    if( grepl("PAV_filtered",files[f])){
+      compare_list[[f]]<-inner_join(base_pav,tmp,by=c("gene_id_base"="gene_id_fm"))
+    } else {
+      compare_list[[f]]<-inner_join(base,tmp,by=c("gene_id_base"="gene_id_fm"))
+    }
+    
+  }  
+  pop_list[[pop]]<-bind_rows(compare_list)
+}
+
+complete_comparisons<-bind_rows(pop_list) %>% 
+  mutate(train_pop=substr(fm_source,1,3),
+         PAV_filtered=if_else(grepl("PAV_filtered",fm_source),"TRUE","FALSE"),
+         model=gsub("[A-Z]+_PCAIR_dapg_","",fm_source),
+         model=gsub("_rho0.1_zpval0.05_correlation.txt","",model),
+         model=gsub("_PAV_filtered","",model),
+         train_pop=if_else(train_pop=="CAU","EUR",train_pop)) 
+
+
+
+complete_comparisons %>%
+  filter(model %in% c("0.001_T"),PAV_filtered == "FALSE") %>% 
+  ggplot(data=.,aes(x=estimate_base,y=estimate_fm)) +
+  theme_bw() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point() +
+  facet_wrap( ~ train_pop) +
+  xlab("Baseline Spearman Correlation in INTERVAL") +
+  ylab("Fine-Mapped Spearman Correlation in INTERVAL") + 
+  geom_smooth(method="lm",se=F) +
+  geom_density_2d(alpha=0.5) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_scatter_plot.pdf",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_scatter_plot.png",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_scatter_plot.tiff",dpi=700,width=7.29,height=4.5)  
+complete_comparisons %>%
+  filter(model %in% c("0.001_T"),PAV_filtered == "TRUE") %>% 
+  ggplot(data=.,aes(x=estimate_base,y=estimate_fm)) +
+  theme_bw() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point() +
+  facet_wrap( ~ train_pop) +
+  xlab("Baseline Spearman Correlation in INTERVAL") +
+  ylab("Fine-Mapped Spearman Correlation in INTERVAL") + 
+  geom_smooth(method="lm",se=F) +
+  geom_density_2d(alpha=0.5) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_scatter_plot_PAV_filtered.pdf",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_scatter_plot_PAV_filtered.png",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_scatter_plot_PAV_filtered.tiff",dpi=700,width=7.29,height=4.5)   
+  
+complete_comparisons %>%
+  filter(PAV_filtered == "FALSE") %>% 
+  mutate(model=factor(model, levels=c("0_F", "0_T", "0.001_F","0.001_T","0.01_F","0.01_T","baseline"))) %>%
+  ggplot(data=.,aes(x=estimate_base,y=estimate_fm)) +
+  theme_bw() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point() +
+  facet_grid(train_pop ~ model) +
+  xlab("Baseline Spearman Correlation in INTERVAL") +
+  ylab("Fine-Mapped Spearman Correlation in INTERVAL") + 
+  geom_smooth(method="lm",se=F) +
+  geom_density_2d(alpha=0.5) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_scatter_grid.pdf",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_scatter_grid.png",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_scatter_grid.tiff",dpi=700,width=7.29,height=4.5) 
+complete_comparisons %>%
+  filter(PAV_filtered == "TRUE") %>% 
+  mutate(model=factor(model, levels=c("0_F", "0_T", "0.001_F","0.001_T","0.01_F","0.01_T","baseline"))) %>%
+  ggplot(data=.,aes(x=estimate_base,y=estimate_fm)) +
+  theme_bw() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point() +
+  facet_grid( train_pop ~ model) +
+  xlab("Baseline Spearman Correlation in INTERVAL") +
+  ylab("Fine-Mapped Spearman Correlation in INTERVAL") + 
+  geom_smooth(method="lm",se=F) +
+  geom_density_2d(alpha=0.5) +
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_scatter_grid_PAV_filtered.pdf",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_scatter_grid_PAV_filtered.png",dpi=700,width=7.29,height=4.5)  + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_scatter_grid_PAV_filtered.tiff",dpi=700,width=7.29,height=4.5)   
+
+
+```
+
+#get some exact numbers
+
+```{r}
+files<-list.files(cor_dir)
+complete_list<-vector(mode="list",length(files))
+
+for (f in 1:length(files)){
+  complete_list[[f]]<-fread(cor_dir %&% files[f]) %>% mutate(source=files[f])
+}
+all_estimates<-bind_rows(complete_list)  %>% 
+  mutate(train_pop=substr(source,1,3),
+         PAV_filtered=if_else(grepl("PAV_filtered",source),"TRUE","FALSE"),
+         model=gsub("[A-Z]+_PCAIR_","",source),
+         model=gsub("_models","",model),
+         model=gsub("dapg_","",model),
+         model=gsub("_rho0.1_zpval0.05_correlation.txt","",model),
+         model=gsub("_PAV_filtered","",model),
+         train_pop=if_else(train_pop=="CAU","EUR",train_pop)) 
+
+all_estimates %>% 
+  filter(model %in% c("0.001_T","baseline"),PAV_filtered==FALSE) %>%
+  separate(gene_id,into=c("apt","ENSG"),sep="_") %>%
+  select(apt) %>%
+  arrange(apt) %>%
+  distinct %>% unlist() %>% unname() %>% length()
+
+
+all_estimates %>% 
+  filter(model %in% c("0.001_T","baseline"),PAV_filtered==T) %>%
+  separate(gene_id,into=c("apt","ENSG"),sep="_") %>%
+  select(apt) %>%
+  arrange(apt) %>%
+  distinct %>% unlist() %>% unname() %>% length()
+
+
+all_estimates %>% 
+  filter(PAV_filtered==FALSE) %>%
+  separate(gene_id,into=c("apt","ENSG"),sep="_") %>%
+  select(apt) %>%
+  arrange(apt) %>%
+  distinct %>% unlist() %>% unname() %>% length()
+
+all_estimates %>% 
+  filter(PAV_filtered==T) %>%
+  separate(gene_id,into=c("apt","ENSG"),sep="_") %>%
+  select(apt) %>%
+  arrange(apt) %>%
+  distinct %>% unlist() %>% unname() %>% length()
+```
