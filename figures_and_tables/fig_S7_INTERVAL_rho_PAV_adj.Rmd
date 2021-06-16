@@ -19,7 +19,7 @@ library(naniar)
 ## read in baseline data
 
 ```{r}
-dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/"
+dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/"
 files<-list.files(dir,pattern="*baseline_models_rho0.1_zpval0.05_correlation.txt")
 file_list<-vector(mode="list",length(files))
 for (f in 1:length(files)){
@@ -34,7 +34,7 @@ base_correlations<-bind_rows(file_list) %>%
 ## read in PAV adj predictions
 
 ```{r}
-dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/PAV_adj_correlations/"
+dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_PAV_adj_correlations/"
 files<-list.files(dir,pattern="*correlation.txt")
 file_list<-vector(mode="list",length(files))
 for (f in 1:length(files)){
@@ -51,9 +51,10 @@ PAV_correlations<-bind_rows(file_list) %>%
 ```{r}
 adj_list<-fread("Z:/scratch/TOPMed_Proteome/06Elastic_net/PAV_modeling/adj_protein_list.csv") %>% 
   mutate(adjusted=if_else(PAV_adj_n_PAVs_found!=0,"adjusted","unadjusted"), PAV_adj_gene=gsub("\\.[0-9]+","",PAV_adj_gene)) %>%
-  rename_with(.fn=function(x){gsub("PAV_adj_","",x)})
+  rename_with(.fn=function(x){gsub("PAV_adj_","",x)}) %>% mutate(train_pop=if_else(train_pop=="CAU","EUR",train_pop))
 
-compare_methods<-full_join(base_correlations,PAV_correlations,by=c("gene_id","train_pop")) %>% inner_join(adj_list,by=c("gene_id"="gene","train_pop"))
+compare_methods<-full_join(base_correlations,PAV_correlations,by=c("gene_id","train_pop")) %>%
+  inner_join(adj_list,by=c("gene_id"="gene","train_pop"))
 
 compare_methods %>%
   ggplot(data=.,aes(y=PAV_adj_estimate,x=base_estimate)) +

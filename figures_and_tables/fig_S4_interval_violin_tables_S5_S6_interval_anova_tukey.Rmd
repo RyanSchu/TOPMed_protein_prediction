@@ -18,7 +18,7 @@ library(tibble)
 
 ```{r}
 
-cor_dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/"
+cor_dir<-"Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/"
 cor_files<-list.files(cor_dir)
 cor_list<-vector(mode="list",length=length(cor_files))
 
@@ -28,7 +28,6 @@ for (f in 1:length(cor_files)){
 
 complete_correlations<-bind_rows(cor_list) %>%
   mutate(train_pop=substr(source,1,3),
-         PAV_filtered=if_else(grepl("PAV_filtered",source),"TRUE","FALSE"),
          model=gsub("[A-Z]+_PCAIR_","",source),
          model=gsub("_rho0.1_zpval0.05_correlation.txt","",model),
          model=gsub("_PAV_filtered","",model),
@@ -53,7 +52,7 @@ F_permuted_list<-vector(mode="list",length=length(model_vec))
 
 for (m in 1:length(model_vec)){
   #grab the intersection of proteins present in all training pops
-  tmp<-complete_correlations %>% filter(model==model_vec[m],PAV_filtered=="FALSE")
+  tmp<-complete_correlations %>% filter(model==model_vec[m])
   
   ubiquitous_proteins<-table(tmp$gene_id) %>% 
     as.data.frame %>% 
@@ -94,54 +93,6 @@ fwrite(bind_rows(anova_list),"Z:/scratch/TOPMed_Proteome/figures_and_tables/fina
 fwrite(bind_rows(tukey_list),"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_pop_TUKEY_summaries.csv")
 
 
-
-model_vec<-unique(complete_correlations$model)
-anova_list<-vector(mode="list",length=length(model_vec))
-tukey_list<-vector(mode="list",length=length(model_vec))
-gene_list_PAV_filtered<-vector(mode="list",length=length(model_vec))
-F_permuted_list<-vector(mode="list",length=length(model_vec))
-
-for (m in 1:length(model_vec)){
-  #grab the intersection of proteins present in all training pops
-  tmp<-complete_correlations %>% filter(model==model_vec[m],PAV_filtered=="TRUE")
-  
-  ubiquitous_proteins<-table(tmp$gene_id) %>% 
-    as.data.frame %>% 
-    filter(Freq==5)%>% 
-    select(Var1) %>% 
-    mutate(Var1=as.character(Var1)) %>%  
-    unlist %>% 
-    unname
-  
-  tmp_ubiquitous <- tmp %>% filter(gene_id %in% ubiquitous_proteins)
-  #store the intersection for plotting later
-  gene_list_PAV_filtered[[model_vec[m]]]<-tmp_ubiquitous
-  
-  #test for differences between training populations
-  #first by anova
-  anovamodel<-anova(lm(estimate ~ train_pop + gene_id,data=tmp_ubiquitous))
-  #next by permuted F test
-  nsim<-1000
-  Fvec<-rep(NA,nsim)
-  Fobs<-anovamodel$`F value`[1]
-  pObs<-anovamodel$`Pr(>F)`[1]
-  simdata<-tmp_ubiquitous %>% arrange(gene_id)
-  for (sim in 1:nsim){
-    simdata$estimate<-unlist(tapply(tmp_ubiquitous$estimate,tmp_ubiquitous$gene_id,function(x){sample(x,length(x))}))
-    permutemodel<-anova(lm(estimate ~ train_pop + gene_id,data=simdata))
-    Fvec[sim]<-permutemodel$`F value`[1]
-  }
-  permuted.F.pval<-sum(Fvec >= Fobs)/nsim
-  F_permuted_list[[m]]<-Fvec
-  #store the output
-  anova_list[[m]]<-anovamodel[1,] %>% as.data.frame %>% mutate(model=model_vec[m],n.proteins=length(ubiquitous_proteins),permuted.F.pval=permuted.F.pval,n.perm=nsim)
-
-  Tukey<-TukeyHSD(aov(lm(estimate ~ train_pop + gene_id,data=tmp_ubiquitous)))
-  tukey_list[[m]]<-Tukey$train_pop %>% as.data.frame %>% rownames_to_column() %>% mutate(model=model_vec[m])
-}
-
-fwrite(bind_rows(anova_list),"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_pop_ANOVA_summaries_PAV_filtered.csv")
-fwrite(bind_rows(tukey_list),"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_pop_TUKEY_summaries_PAV_filtered.csv")
 ```
 
 
@@ -167,23 +118,5 @@ ggplot(data=gene_subset,aes(x=train_pop,y=estimate)) +
   facet_wrap(~model,ncol=1) +
   scale_fill_viridis(discrete=T)  + theme(legend.position = "none") + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_compare_pops.pdf",dpi=700,height=7,width=7) + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_compare_pops.png",dpi=700,height=7,width=7) + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_compare_pops.tiff",dpi=700,height=7,width=7)
 
-gene_subset<-bind_rows(gene_list_PAV_filtered)
-
-gene_subset %>% 
-  filter(model %in% c("0.001_T","baseline")) %>%
-  mutate(model=if_else(model=="0.001_T","Fine-mapped",model)) %>%
-  ggplot(data=.,aes(x=train_pop,y=estimate)) +
-  geom_violin(aes(fill=train_pop)) +
-  geom_boxplot(width=0.1) +
-  theme_bw() +
-  facet_wrap(~model,ncol=1) +
-  scale_fill_viridis(discrete=T)  + theme(legend.position = "none") + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_compare_pops_PAV_filtered.pdf",dpi=700) + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_compare_pops_PAV_filtered.png",dpi=700) + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_compare_pops_PAV_filtered.tiff",dpi=700)
-
-ggplot(data=gene_subset,aes(x=train_pop,y=estimate)) +
-  geom_violin(aes(fill=train_pop)) +
-  geom_boxplot(width=0.1) +
-  theme_bw() +
-  facet_wrap(~model,ncol=1) +
-  scale_fill_viridis(discrete=T)  + theme(legend.position = "none") + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_compare_pops_PAV_filtered.pdf",dpi=700,height=7,width=7) + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_compare_pops_PAV_filtered.png",dpi=700,height=7,width=7) + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/supplemental_INTERVAL_compare_pops_PAV_filtered.tiff",dpi=700,height=7,width=7)
 
 ```

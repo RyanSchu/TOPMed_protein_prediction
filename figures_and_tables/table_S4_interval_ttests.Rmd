@@ -14,16 +14,16 @@ library(dplyr)
 ## first handle the non pav filtered
 
 ```{r cars}
-pop_list<-c("AFA","CHN","HIS","CAU","ALL")
+pop_list<-c("AFA","CHN","HIS","EUR","ALL")
 
 
 comparison_list<-list()
 for (pop in pop_list){
-  files<-list.files(path="Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/",pattern=pop)
+  files<-list.files(path="Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/",pattern=pop)
   files<-files[!grepl("PAV_filtered",files)]
   file_list<-list(rep(NA,length(files)))
   for (i in 1:length(files)){
-    file_list[[i]]<-fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/" %&% files[i]) %>% mutate(model=files[i])
+    file_list[[i]]<-fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% files[i]) %>% mutate(model=files[i])
   }
   names(file_list)<-files
   
@@ -58,56 +58,5 @@ for (pop in pop_list){
 ```{r}
 complete_comparisons<-bind_rows(comparison_list) %>% mutate(pop=gsub("CAU","EUR",pop),model.set=gsub("CAU","EUR",model.set))
 fwrite(complete_comparisons,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_statistical_tests_comparison_to_baseline.csv",sep=',',col.names = T)
-signif_comparisons<-complete_comparisons %>% filter(wilcox.p.val < 0.05)
-```
-
-## then handle the pav filtered
-
-```{r cars}
-pop_list<-c("AFA","CHN","HIS","CAU","ALL")
-
-
-comparison_list<-list()
-for (pop in pop_list){
-  files<-list.files(path="Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/",pattern=pop)
-  files<-files[grepl("PAV_filtered",files)]
-  file_list<-list(rep(NA,length(files)))
-  for (i in 1:length(files)){
-    file_list[[i]]<-fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/double_dipped_correlation/" %&% files[i]) %>% mutate(model=files[i])
-  }
-  names(file_list)<-files
-  
-  compare<-c("pop","model.set","shapiro.stat","shaprio.p.val","t.stat","t.p.val","n.proteins","t.lower.95.CI","t.upper.95.CI","t.mean.diff","wilcox.stat","wilcox.p.val")
-  comparison_to_baseline<-data.frame(matrix(nrow=length(files)-1,ncol=length(compare)))
-  colnames(comparison_to_baseline)<-compare
-  comparison_to_baseline$pop<-pop
-  comparison_to_baseline$model.set<-files[2:length(files)]
-  for ( i in 2:length(files)){
-    tmp<-file_list[[files[1]]]
-    tmp<-inner_join(tmp,file_list[[files[i]]],by=c("gene_id"))
-    shapirotest<-shapiro.test(tmp$estimate.x - tmp$estimate.y)
-    # shapirotest
-    ttest<-t.test(tmp$estimate.x,tmp$estimate.y,paired=T,alternative="two.sided")
-    # ttest$conf.int[1]
-    wilcoxtest<-wilcox.test(tmp$estimate.x, tmp$estimate.y,paired=T)
-    comparison_to_baseline$shapiro.stat[i-1]<-shapirotest$statistic
-    comparison_to_baseline$shaprio.p.val[i-1]<-shapirotest$p.value
-    comparison_to_baseline$t.stat[i-1]<-ttest$statistic
-    comparison_to_baseline$t.p.val[i-1]<-ttest$p.value
-    comparison_to_baseline$t.lower.95.CI[i-1]<-ttest$conf.int[1]
-    comparison_to_baseline$t.upper.95.CI[i-1]<-ttest$conf.int[2]
-    comparison_to_baseline$t.mean.diff[i-1]<-ttest$estimate
-    comparison_to_baseline$wilcox.stat[i-1]<-wilcoxtest$statistic
-    comparison_to_baseline$wilcox.p.val[i-1]<-wilcoxtest$p.value
-    comparison_to_baseline$n.proteins[i-1]<-nrow(tmp)
-  }
-  comparison_list[[pop]]<-comparison_to_baseline  
-}
-```
-
-```{r}
-complete_comparisons<-bind_rows(comparison_list) %>% mutate(pop=gsub("CAU","EUR",pop),model.set=gsub("CAU","EUR",model.set))
-
-fwrite(complete_comparisons,"Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/INTERVAL_statistical_tests_comparison_to_baseline_PAV_filtered.csv",sep=',',col.names = T)
-signif_comparisons_PAV_filtered<-complete_comparisons %>% filter(t.p.val < 0.05)
+signif_comparisons<-complete_comparisons %>% filter(wilcox.p.val < 0.05,grepl("0.001_T",model.set))
 ```

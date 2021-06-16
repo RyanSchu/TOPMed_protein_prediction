@@ -116,7 +116,7 @@ expr_snp_matrix %>%
   scale_fill_viridis(discrete=T) +
   ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_TOPMED_adjusted_expr_isoform_geno_boxplot.png",dpi=700)+
   ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_TOPMED_adjusted_expr_isoform_geno_boxplot.pdf",dpi=700)+
-  ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_TOPMED_adjusted_expr_isoform_geno_boxplot.tiff",dpi=700)
+  ggsave("Z:/scratch/TOPMed_Proteome/investigate_APOE/INTERVAL_TOPMED_adjusted_expr_isoform_geno_boxplot.tiff",dpi=300)
 
 ```
 

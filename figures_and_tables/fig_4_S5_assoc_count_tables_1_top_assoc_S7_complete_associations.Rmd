@@ -113,7 +113,7 @@ fwrite(bind_rows(model_comparisons_list),"Z:/scratch/TOPMed_Proteome/08PWAS/tmp_
 
 ```{r}
 all_results<-bind_rows(model_comparisons_list)
-# all_results<-fread("Z:/scratch/TOPMed_Proteome/08PWAS/tmp_all_results.csv",showProgress = T)
+all_results<-fread("Z:/scratch/TOPMed_Proteome/08PWAS/tmp_all_results.csv",showProgress = T)
 # # cor.test(all_results$page_zscore,all_results$ukbb_zscore,use="complete.obs")
 # # ggplot(data=all_results,aes(x=page_zscore,y=ukbb_zscore)) +
 # #   geom_point() + 
@@ -166,6 +166,7 @@ ukbb_bonf_counts<-all_results %>% filter(ukbb_pvalue < ukbb_bonf_thresh) %>% cou
   geom_col(aes(fill=train_pop),position="dodge") +
   labs(fill="Training Population") +
   theme_bw() +
+    ylim(0,35) +
     theme(axis.title.x=element_blank()) +
   ylab("N S-PrediXcan\nSignificant") +
   scale_fill_viridis(discrete=T))
@@ -194,6 +195,7 @@ page_discoveries<-all_results %>%
   geom_col(aes(fill=train_pop),position="dodge") +
   labs(fill="Training Population") +
   theme_bw() +
+    ylim(0,35) +
     theme(axis.title.x=element_blank()) +
   ylab("N S-PrediXcan &\nCOLOC Significant") +
   scale_fill_viridis(discrete=T))
@@ -214,6 +216,7 @@ page_results_focused<-page_bonf_colocalized_ukbb_strict %>%
   ggplot(data=.,aes(x=model,y=n)) +
   geom_col(aes(fill=train_pop),position="dodge") +
   theme_bw() +
+  ylim(0,35) +
   ylab("N Replicated") +
   labs(fill="Training Population") +
   scale_fill_viridis(discrete=T)
@@ -244,7 +247,7 @@ grid<-plot_grid(page_spred_count_focused_plot + theme(legend.position="none"),
 plot_grid(grid,legend,ncol = 1, rel_heights = c(1, .1)) +
   ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/PAGE_spred_coloc_rep.pdf",dpi=700,height=7,width=7) +
   ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/PAGE_spred_coloc_rep.png",dpi=700,height=7,width=7) +
-  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/PAGE_spred_coloc_rep.tiff",dpi=700,height=7,width=7) 
+  ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/figures_and_tables/PAGE_spred_coloc_rep.tiff",dpi=350,height=7,width=7) 
 
 legend <- get_legend(
   page_results + 

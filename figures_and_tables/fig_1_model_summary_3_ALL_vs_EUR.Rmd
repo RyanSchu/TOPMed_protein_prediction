@@ -39,13 +39,13 @@ library(cowplot)
 "%&%" = function(a,b) paste(a,b,sep="")
 
 for(pop in c("ALL", "AFA", "CHN", "EUR", "HIS")){
-  bl <- fread("ryans-results/rho_avg_values_" %&% pop %&% "_PCAIR_baseline_models.txt") %>% mutate(pop=pop, model="baseline")
+  bl <- fread("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/wheeler_figures/rho_avg_values_" %&% pop %&% "_PCAIR_baseline_models.txt") %>% mutate(pop=pop, model="baseline")
   if(exists('res')){
     res <- rbind(res, bl)
   }else{
     res <- bl
   }
-  fm <- fread("ryans-results/rho_avg_values_" %&% pop %&% "_PCAIR_dapg_0.001_T.txt") %>% mutate(pop=pop, model="fine-mapped")
+  fm <- fread("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/wheeler_figures/rho_avg_values_" %&% pop %&% "_PCAIR_dapg_0.001_T.txt") %>% mutate(pop=pop, model="fine-mapped")
     res <- rbind(res, fm)
 }
 
@@ -69,7 +69,7 @@ res0.1_p <- filter(res, rho_avg>0.1, pred.perf.pval<0.05)
 
 ### Protein model counts by sample size
 ```{r,fig.width=5,fig.height=5}
-counts <- fread('protein_counts.txt')
+counts <- fread('Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/wheeler_figures/protein_counts.txt')
 counts <- mutate(counts, n=c(183,183,71,71,416,416,301,301,971,971))
 b<-ggplot(counts,aes(x=n,y=count,color=model,fill=model)) + geom_point() + 
   geom_label(aes(label=pop),nudge_y=-45,alpha=0.1,size=2) + 
@@ -84,20 +84,22 @@ print(b)
 
 fig1 <- plot_grid(a,b,align="h",rel_widths = c(0.58,0.42))
 print(fig1)
-tiff("Fig1.tiff", width = 19, height = 7.1, units = 'cm', res = 300, compression = 'lzw')
+tiff("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig1.tiff", width = 19, height = 8, units = 'cm', res = 300, compression = 'lzw')
 fig1
 dev.off()
 
-png("Fig1.png", width = 19, height =8, units = 'cm', res = 300)
+png("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig1.png", width = 19, height =8, units = 'cm', res = 300)
 fig1
 dev.off()
+
+fig1 + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig1.pdf", width = 19, height = 8, units = 'cm', dpi = 300)
 ```
 
 ### compare model performance in INTERVAL
 ```{r}
 for(pop in c("ALL", "AFA", "CHN", "EUR", "HIS")){
-  bl <- fread("ryans-results/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
-  fm <- fread("ryans-results/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
+  bl <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
+  fm <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
   #filter to intersection proteins
   bl <- filter(bl, gene_id %in% fm$gene_id)
   fm <- filter(fm, gene_id %in% bl$gene_id)
@@ -119,8 +121,8 @@ ggplot(intres, aes(x=model,y=estimate,col=model)) + geom_violin() + geom_boxplot
 
 #actually, paired test (by protein w/in pop) works best, thanks Ryan!
 for(pop in c("ALL", "AFA", "CHN", "EUR", "HIS")){
-  bl <- fread("ryans-results/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
-  fm <- fread("ryans-results/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
+  bl <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
+  fm <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
   j <- inner_join(bl,fm,by="gene_id")
   cat(pop)
   print(wilcox.test(j$estimate.x,j$estimate.y,paired=TRUE))
@@ -131,13 +133,13 @@ for(pop in c("ALL", "AFA", "CHN", "EUR", "HIS")){
 ### Compare ALL v. EUR performance in INTERVAL
 ```{r}
 pop="ALL"
-allbl <- fread("ryans-results/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
-allfm <- fread("ryans-results/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
+allbl <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
+allfm <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
 dim(allbl)
 dim(allfm)
 pop="EUR"
-eurbl <- fread("ryans-results/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
-eurfm <- fread("ryans-results/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
+eurbl <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_baseline_models_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="baseline")
+eurfm <- fread("Z:/scratch/TOPMed_Proteome/10INTERVAL_prediction/true_subset_correlations/" %&% pop %&% "_PCAIR_dapg_0.001_T_rho0.1_zpval0.05_correlation.txt") %>% mutate(pop=pop, model="fine-mapped")
 dim(eurbl)
 dim(eurfm)
 #all pop res
@@ -162,10 +164,10 @@ fig3<-ggplot(popres, aes(y=estimate, x=pop, color=model, fill=model)) + geom_vio
   facet_wrap(~model) + scale_color_viridis_d(begin=0.7,end=0) + scale_fill_viridis_d(begin=0.7,end=0) + theme_bw(14) + 
   theme(legend.position = "none") + xlab("population") + ylab(expression("INTERVAL"~rho)) + ggtitle("A")
 print(fig3)
-tiff("Fig3.tiff", width = 19, height = 9.5, units = 'cm', res = 300, compression = 'lzw')
+tiff("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig3.tiff", width = 19, height = 9.5, units = 'cm', res = 300, compression = 'lzw')
 fig3
 dev.off()
-png("Fig3.png", width = 19, height = 9.5, units = 'cm', res = 300)
+png("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig3.png", width = 19, height = 9.5, units = 'cm', res = 300)
 fig3
 dev.off()
 
@@ -185,10 +187,10 @@ fig3alt<- ggplot(blfm, aes(x=estimate.y, y=estimate.x)) + geom_point() + facet_w
   xlab(expression("INTERVAL"~rho*" (EUR training)")) + ylab(expression("INTERVAL"~rho*"  (ALL training)")) +theme_bw(14) +  coord_cartesian(xlim=c(-0.05,1),ylim=c(-0.05,1))+
   ggtitle("B")
 print(fig3alt)
-tiff("Fig3alt.tiff", width = 19, height = 9.5, units = 'cm', res = 300, compression = 'lzw')
+tiff("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig3alt.tiff", width = 19, height = 9.5, units = 'cm', res = 300, compression = 'lzw')
 fig3alt
 dev.off()
-png("Fig3alt.png", width = 19, height = 9.5, units = 'cm', res = 300)
+png("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig3alt.png", width = 19, height = 9.5, units = 'cm', res = 300)
 fig3alt
 dev.off()
 ```
@@ -196,10 +198,13 @@ dev.off()
 ```{r,fig.height=6,fig.width=6}
 fig3ab <- plot_grid(fig3,fig3alt,nrow=2)
 print(fig3ab)
-tiff("Fig3ab.tiff", width = 18, height = 19, units = 'cm', res = 300, compression = 'lzw')
+tiff("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig3ab.tiff", width = 18, height = 19, units = 'cm', res = 300, compression = 'lzw')
 fig3ab
 dev.off()
-png("Fig3ab.png", width = 18, height = 19, units = 'cm', res = 300)
+png("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig3ab.png", width = 18, height = 19, units = 'cm', res = 300)
 fig3ab
 dev.off()
+fig3ab + ggsave("Z:/scratch/TOPMed_Proteome/figures_and_tables/final_figures_and_tables/Fig3ab.pdf", width = 18, height = 19, units = 'cm', dpi = 300)
+
+
 ```
