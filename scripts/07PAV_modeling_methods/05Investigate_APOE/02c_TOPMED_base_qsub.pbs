@@ -1,0 +1,7 @@
+#!/bin/bash
+
+#$ -S /bin/bash
+#$ -pe mpi 1
+
+Rscript /home/rschubert1/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/01b_TOPMED_base_training_call_main.R ${pop}
+

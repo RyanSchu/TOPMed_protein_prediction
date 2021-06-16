@@ -1,0 +1,85 @@
+library(dplyr)
+library(RSQLite)
+library(qvalue)
+library(data.table)
+"%&%" <- function(a,b) paste(a,b, sep='')
+driver <- dbDriver('SQLite')
+populations<-c("AFA","CHN","HIS","ALL","CAU")
+
+for (pop in populations){
+  out_prefix<-'/home/rschubert1/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/db/' %&% pop %&% '_PCAIR_baseline_PAV_adj_models_APOE'
+  
+  model_summaries <- read.table('/home/rschubert1/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/out/' %&% pop %&% '_chr19_base_APOE_chr19_model_summaries.txt', header = T, stringsAsFactors = F)
+  tiss_summary <- read.table('/home/rschubert1/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/out/' %&% pop %&% '_chr19_base_APOE_chr19_tiss_chr_summary.txt', header = T, stringsAsFactors = F)
+  weights <- read.table('/home/rschubert1/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/out/' %&% pop %&% '_chr19_base_APOE_chr19_weights.txt', header = T, stringsAsFactors = F)
+  covariances<-read.table('/home/rschubert1/scratch/TOPMed_Proteome/investigate_APOE/model_PAV_adj_APOE/out/' %&% pop %&% '_chr19_base_APOE_chr19_covariances.txt', header = T, stringsAsFactors = F)
+  n_samples <- tiss_summary$n_samples
+
+  
+  weights <- rename(weights,gene = gene_id, weight = beta, ref_allele = ref, eff_allele=alt)
+  sample_info <- data.frame(n_samples = n_samples, population = pop, tissue = "plasma protein")
+  construction <- tiss_summary %>% select(cv_seed)
+  
+  pvalues<-model_summaries$zscore_pval
+  qvalues<-tryCatch(qvalue(pvalues), error = function(cond) {message('Error'); message(geterrmessage()); list()})
+  model_summaries <- rename(model_summaries, 
+                            gene = gene_id, 
+                            genename = gene_name,
+                            n.snps.in.window = n_snps_in_window,
+                            n.snps.in.model = n_snps_in_model,
+                            pred.perf.R2 = rho_avg_squared,
+                            pred.perf.pval = zscore_pval
+                            )# %>% mutate(pred.perf.qval = qvalues$qvalues)
+  if (length(qvalues) == 0){
+    model_summaries <- model_summaries %>% mutate(pred.perf.qval = 0)
+  } else {
+    model_summaries <- model_summaries %>% mutate(pred.perf.qval = qvalues$qvalues)
+  }
+  
+  conn <- dbConnect(drv = driver, out_prefix %&% '_unfiltered.db')
+  dbWriteTable(conn, 'extra', model_summaries, overwrite = TRUE)
+  dbGetQuery(conn, "CREATE INDEX gene_model_summary ON extra (gene)")
+  dbWriteTable(conn, 'weights', weights, overwrite = TRUE)
+  dbGetQuery(conn, "CREATE INDEX weights_rsid ON weights (rsid)")
+  dbGetQuery(conn, "CREATE INDEX weights_gene ON weights (gene)")
+  dbGetQuery(conn, "CREATE INDEX weights_rsid_gene ON weights (rsid, gene)")
+  dbWriteTable(conn, 'sample_info', sample_info, overwrite = TRUE)
+  dbWriteTable(conn, 'construction', construction, overwrite = TRUE)
+  
+  fwrite(covariances,out_prefix %&% '_unfiltered_covariances.txt',col.names = T,sep='\t',row.names=F,quote = F)
+  
+  ### Write only significant models
+  conn3 <- dbConnect(drv = driver, out_prefix %&%  '_rho0.1_zpval0.05.db')
+  signif_models<-filter(model_summaries, pred.perf.pval < 0.05 , rho_avg > 0.1)
+  dbWriteTable(conn3, 'extra', signif_models, overwrite = TRUE)
+  dbGetQuery(conn3, "CREATE INDEX gene_model_summary ON extra (gene)")
+  weights_signif<- weights %>% filter ( gene %in% signif_models$gene)
+  dbWriteTable(conn3, 'weights', weights_signif, overwrite = TRUE)
+  dbGetQuery(conn3, "CREATE INDEX weights_rsid ON weights (rsid)")
+  dbGetQuery(conn3, "CREATE INDEX weights_gene ON weights (gene)")
+  dbGetQuery(conn3, "CREATE INDEX weights_rsid_gene ON weights (rsid, gene)")
+  dbWriteTable(conn3, 'sample_info', sample_info, overwrite = TRUE)
+  dbWriteTable(conn3, 'construction', construction, overwrite = TRUE)
+  
+  covariances_signif<-covariances %>% filter(GENE %in% signif_models$gene)
+  
+  fwrite(covariances_signif,out_prefix %&% '_rho0.1_zpval0.05_covariances.txt',col.names = T,sep='\t',row.names=F,quote = F)
+  
+  
+#  conn3 <- dbConnect(drv = driver, out_prefix %&%  '_APOE_only.db')
+#  signif_models<-filter(model_summaries, genename %in% c("SL000276","SL004668","SL004669","SL000277"))
+#  dbWriteTable(conn3, 'extra', signif_models, overwrite = TRUE)
+#  dbGetQuery(conn3, "CREATE INDEX gene_model_summary ON extra (gene)")
+#  weights_signif<- weights %>% filter ( gene %in% signif_models$gene)
+#  dbWriteTable(conn3, 'weights', weights_signif, overwrite = TRUE)
+#  dbGetQuery(conn3, "CREATE INDEX weights_rsid ON weights (rsid)")
+#  dbGetQuery(conn3, "CREATE INDEX weights_gene ON weights (gene)")
+#  dbGetQuery(conn3, "CREATE INDEX weights_rsid_gene ON weights (rsid, gene)")
+#  dbWriteTable(conn3, 'sample_info', sample_info, overwrite = TRUE)
+#  dbWriteTable(conn3, 'construction', construction, overwrite = TRUE)
+  
+ # covariances_signif<-covariances %>% filter(GENE %in% signif_models$gene)
+  
+ # fwrite(covariances_signif,out_prefix %&% '_APOE_only.txt',col.names = T,sep='\t',row.names=F,quote = F)
+  
+}
